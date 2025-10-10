@@ -1,0 +1,13 @@
+services:
+  telethon-userbot:
+    build: .
+    container_name: telethon-userbot
+    restart: unless-stopped
+    volumes:
+      - ./session:/app/session
+      - ./gifts.json:/app/gifts.json
+    environment:
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - LOGIN_CODE=${LOGIN_CODE}
