@@ -1,0 +1,4 @@
+# Telethon sessions
+*.session
+*.session-journal
+session/
