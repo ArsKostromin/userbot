@@ -1,15 +1,21 @@
-from telethon import events, functions, types
+from telethon import events, functions
 import logging
+from message_handler import handle_star_gift
 
 logger = logging.getLogger(__name__)
 
 def register_gift_listener(client):
+    """
+    Подписка на все новые сообщения, чтобы ловить подарки/NFT
+    """
     @client.on(events.NewMessage)
     async def handle_gift(event):
-        action = event.message.action
+        message = event.message
+        action = getattr(message, 'action', None)
         if not action:
             return
 
+        # Типы подарков/NFT
         gift_types = (
             'MessageActionGiftCode',
             'MessageActionGiftStars',
@@ -18,15 +24,15 @@ def register_gift_listener(client):
             'MessageActionStarGiftUnique'
         )
 
-        if type(action).__name__ in gift_types:
-            logger.info(f"🎁 Новый подарок/NFT: {type(action).__name__}")
-            logger.info(f"От кого: {getattr(action, 'from_id', 'неизвестно')}")
-            logger.info(f"Содержимое: {action.to_dict()}")
+        action_type = type(action).__name__
+        if action_type in gift_types:
+            logger.info(f"🎁 Новый подарок/NFT: {action_type} в чате {message.chat_id}")
 
-            gift_id = getattr(action, 'gift', None)
-            if gift_id:
-                try:
-                    info = await client(functions.payments.GetCollectibleInfoRequest(gift_id=gift_id))
-                    logger.info(f"Метаданные NFT: {info.to_dict()}")
-                except Exception as e:
-                    logger.warning(f"Не удалось получить метаданные NFT: {e}")
+            try:
+                # Вызываем уже готовый обработчик из message_handler
+                await handle_star_gift(message, client,
+                                       chat_name=getattr(message.chat, 'title', None),
+                                       chat_username=getattr(message.chat, 'username', None),
+                                       sender_info=None)
+            except Exception as e:
+                logger.error(f"⚠️ Ошибка при обработке подарка/NFT: {e}")

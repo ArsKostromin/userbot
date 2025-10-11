@@ -1,11 +1,9 @@
 import asyncio
 import logging
-from telethon import events
-from telethon.tl.types import MessageService
 
 from config import LOG_FORMAT, LOG_DATE_FORMAT, LOG_LEVEL
 from telegram_client import create_client, initialize_client
-from message_handler import handle_new_message
+from gifts_listener import register_gift_listener
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -18,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 async def main():
     """
-    Основная функция userbot'а
-    Мониторит ВСЕ чаты на предмет Star Gifts, гифтов и обычных сообщений
+    Userbot, который мониторит ВСЕ новые сообщения на предмет Star Gifts, NFT и обычных подарков
     """
     client = create_client()
 
@@ -28,32 +25,13 @@ async def main():
             logger.error("❌ Не удалось инициализировать клиент")
             return
 
-        logger.info("🔄 Userbot запущен и мониторит ВСЕ чаты на предмет Star Gifts и гифтов...")
+        # --- Подключаем listener для всех подарков ---
+        register_gift_listener(client)
+
+        logger.info("🔄 Userbot запущен. Мониторит все чаты на предмет NFT/Star Gifts...")
         logger.info("💡 Для остановки нажмите Ctrl+C")
 
-        # --- 1️⃣ Обычные текстовые сообщения --- говно
-        @client.on(events.NewMessage)
-        async def new_message_handler(event):
-            await handle_new_message(event, client)
-
-        # --- 2️⃣ Сервисные сообщения (где и приходят подарки) ---
-        @client.on(events.Raw)
-        async def raw_update_handler(event):
-            try:
-                # Если апдейт содержит message (в том числе MessageService)
-                if hasattr(event, "message") and isinstance(event.message, MessageService):
-                    logger.debug(f"📡 Сервисное сообщение: {type(event.message.action).__name__}")
-                    await handle_new_message(event, client)
-                # Иногда Telegram присылает пачку апдейтов
-                elif hasattr(event, "updates"):
-                    for update in event.updates:
-                        if hasattr(update, "message") and isinstance(update.message, MessageService):
-                            fake_event = type("FakeEvent", (), {"message": update.message})
-                            await handle_new_message(fake_event, client)
-            except Exception as e:
-                logger.error(f"⚠️ Ошибка при обработке raw события: {e}")
-
-        # --- 3️⃣ Запускаем вечный цикл ---
+        # --- Запускаем вечный цикл ---
         await client.run_until_disconnected()
 
     except KeyboardInterrupt:
