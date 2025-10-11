@@ -66,10 +66,13 @@ async def handle_new_message(event, client):
         message_type = f"Действие: {action_type}"
         logger.info(f"   🎭 Тип: {message_type}")
         
-        # Если это Star Gift - обрабатываем специально
+        # Обрабатываем разные типы подарков
         if action_type == 'MessageActionStarGiftUnique':
             logger.warning(f"🎁 НАЙДЕН STAR GIFT в чате '{chat_name}'!")
             await handle_star_gift(message, client, chat_name, chat_username, sender_info)
+        elif action_type == 'MessageActionUserGift':
+            logger.warning(f"🎁 НАЙДЕН ОБЫЧНЫЙ ПОДАРОК в чате '{chat_name}'!")
+            await handle_user_gift(message, client, chat_name, chat_username, sender_info)
     else:
         # Логируем содержимое текстового сообщения (если есть)
         text_content = getattr(message, 'text', '')
@@ -125,3 +128,100 @@ async def handle_star_gift(message, client, chat_name, chat_username, sender_inf
         logger.info("🎉 Подарок успешно обработан и сохранен!")
     else:
         logger.warning("⚠️ Подарок найден, но не удалось сохранить в API")
+
+
+async def handle_user_gift(message, client, chat_name, chat_username, sender_info):
+    """
+    Обрабатывает обычный подарок пользователя (MessageActionUserGift)
+    """
+    logger.info("🔍 Анализирую обычный подарок пользователя...")
+    
+    # Логируем всю информацию о подарке
+    action = message.action
+    logger.info("--- 📋 Полная информация о подарке ---")
+    logger.info(f"   🎁 Тип действия: {type(action).__name__}")
+    
+    # Извлекаем доступную информацию из action
+    gift_data = {
+        "gift_type": "user_gift",
+        "message_id": getattr(message, 'id', None),
+        "chat_id": message.chat_id,
+        "chat_name": chat_name,
+        "chat_username": chat_username,
+        "date": str(getattr(message, 'date', 'N/A')),
+    }
+    
+    # Добавляем информацию об отправителе
+    if sender_info:
+        gift_data["sender_info"] = sender_info
+        sender_name = sender_info.get('sender_first_name', 'Unknown')
+        sender_username = sender_info.get('sender_username', '')
+        if sender_username:
+            logger.info(f"👤 Отправитель подарка: {sender_name} (@{sender_username})")
+        else:
+            logger.info(f"👤 Отправитель подарка: {sender_name}")
+    
+    # Пытаемся извлечь дополнительную информацию из action
+    try:
+        # Логируем все доступные атрибуты action
+        logger.info("   🔍 Доступные атрибуты action:")
+        for attr_name in dir(action):
+            if not attr_name.startswith('_'):
+                try:
+                    attr_value = getattr(action, attr_name)
+                    if not callable(attr_value):
+                        logger.info(f"      {attr_name}: {attr_value}")
+                        gift_data[f"action_{attr_name}"] = str(attr_value)
+                except Exception as e:
+                    logger.debug(f"      {attr_name}: <не удалось получить: {e}>")
+        
+        # Пытаемся найти информацию о подарке
+        if hasattr(action, 'gift'):
+            gift_info = action.gift
+            logger.info("   🎁 Найдена информация о подарке:")
+            gift_data["gift_info"] = {}
+            
+            for attr_name in dir(gift_info):
+                if not attr_name.startswith('_'):
+                    try:
+                        attr_value = getattr(gift_info, attr_name)
+                        if not callable(attr_value):
+                            logger.info(f"      gift.{attr_name}: {attr_value}")
+                            gift_data["gift_info"][attr_name] = str(attr_value)
+                    except Exception as e:
+                        logger.debug(f"      gift.{attr_name}: <не удалось получить: {e}>")
+        
+        # Пытаемся найти информацию о получателе
+        if hasattr(action, 'user_id'):
+            recipient_id = action.user_id
+            logger.info(f"   👤 Получатель подарка: {recipient_id}")
+            gift_data["recipient_id"] = recipient_id
+            
+            # Пытаемся получить информацию о получателе
+            try:
+                recipient_info = await get_sender_info(client, recipient_id)
+                gift_data["recipient_info"] = recipient_info
+                recipient_name = recipient_info.get('sender_first_name', 'Unknown')
+                recipient_username = recipient_info.get('sender_username', '')
+                if recipient_username:
+                    logger.info(f"   👤 Получатель: {recipient_name} (@{recipient_username})")
+                else:
+                    logger.info(f"   👤 Получатель: {recipient_name}")
+            except Exception as e:
+                logger.warning(f"   ⚠️ Не удалось получить информацию о получателе: {e}")
+        
+    except Exception as e:
+        logger.error(f"   ❌ Ошибка при анализе подарка: {e}")
+    
+    # Выводим полные данные в консоль
+    logger.info("--- 📦 Полные данные о подарке (JSON-формат) ---")
+    print(json.dumps(gift_data, indent=4, ensure_ascii=False))
+    logger.info("--------------------------------------------------")
+    
+    # Отправляем данные в API
+    logger.info("🚀 Отправляю данные о подарке в Django API...")
+    api_success = await send_gift_to_api(gift_data)
+    if api_success:
+        logger.info("🎉 Обычный подарок успешно обработан и сохранен!")
+    else:
+        logger.warning("⚠️ Обычный подарок найден, но не удалось сохранить в API")
