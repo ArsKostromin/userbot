@@ -9,22 +9,34 @@ from api_client import send_gift_to_api
 logger = logging.getLogger(__name__)
 
 
-async def handle_new_message(event, chat, client):
+async def handle_new_message(event, client):
     """
     Обрабатывает новое сообщение и проверяет, является ли оно Star Gift
+    Теперь мониторит ВСЕ чаты, а не только один конкретный
     """
     message = event.message
     
-    # Проверяем, что сообщение из нужного чата
-    if message.chat_id != chat.id:
-        return
+    # Получаем информацию о чате для логирования
+    try:
+        chat = await client.get_entity(message.chat_id)
+        chat_name = getattr(chat, 'title', getattr(chat, 'username', f"Chat {message.chat_id}"))
+    except Exception as e:
+        chat_name = f"Unknown Chat {message.chat_id}"
+        logger.debug(f"Не удалось получить информацию о чате {message.chat_id}: {e}")
     
     # Проверяем, является ли сообщение Star Gift
     if getattr(message, 'action', None) and type(message.action).__name__ == 'MessageActionStarGiftUnique':
-        logger.warning(f"🎁 Найден новый Star Gift в MSG_ID: {getattr(message, 'id', 'N/A')}!")
+        logger.warning(f"🎁 Найден новый Star Gift в чате '{chat_name}' (MSG_ID: {getattr(message, 'id', 'N/A')})!")
         
         # Извлекаем данные о подарке
         gift_data = extract_gift_data(message.action, message)
+        
+        # Добавляем информацию о чате в данные подарка
+        gift_data["chat_info"] = {
+            "chat_id": message.chat_id,
+            "chat_name": chat_name,
+            "chat_username": getattr(chat, 'username', None) if 'chat' in locals() else None
+        }
         
         # Получаем информацию об отправителе
         sender_id = getattr(message, 'sender_id', None)
@@ -51,3 +63,6 @@ async def handle_new_message(event, chat, client):
             logger.info("🎉 Подарок успешно обработан и сохранен!")
         else:
             logger.warning("⚠️ Подарок найден, но не удалось сохранить в API")
+    else:
+        # Логируем обычные сообщения для отладки (только если это не спам)
+        logger.debug(f"📨 Обычное сообщение в чате '{chat_name}' от пользователя {getattr(message, 'sender_id', 'Unknown')}")

@@ -1,6 +1,6 @@
 # Userbot для мониторинга Star Gifts
 
-Этот userbot мониторит чат `@kupil_prodal_l9m` и автоматически отправляет найденные Star Gifts в Django API.
+Этот userbot мониторит **ВСЕ чаты** на предмет Star Gifts и автоматически отправляет найденные подарки в Django API.
 
 ## Структура проекта
 

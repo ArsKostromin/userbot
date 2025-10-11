@@ -1,26 +1,28 @@
 """
 Конфигурация для userbot
+Содержит все настройки и переменные окружения
 """
 import os
 
-# Telegram API настройки
+# ===== TELEGRAM API НАСТРОЙКИ =====
+# Получаем API ключи из переменных окружения
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
-PHONE_NUMBER = os.getenv("PHONE_NUMBER")
-LOGIN_CODE = os.getenv("LOGIN_CODE")
+PHONE_NUMBER = os.getenv("PHONE_NUMBER")  # Номер телефона для авторизации
+LOGIN_CODE = os.getenv("LOGIN_CODE")      # Код авторизации (если нужен)
 
-# Целевой чат для мониторинга
-TARGET_CHAT_USERNAME = '@kupil_prodal_l9m'
-
-# Django API настройки
+# ===== DJANGO API НАСТРОЙКИ =====
+# URL Django API (по умолчанию web:8000 для Docker)
 API_BASE_URL = os.getenv("API_BASE_URL", "http://web:8000")
-API_TOKEN = os.getenv("API_TOKEN")
-USER_ID = os.getenv("USER_ID")
+API_TOKEN = os.getenv("API_TOKEN")        # Токен для авторизации в Django API
+USER_ID = os.getenv("USER_ID")            # ID пользователя, которому добавляем подарки
 
-# Настройки логирования
+# ===== НАСТРОЙКИ ЛОГИРОВАНИЯ =====
+# Формат логов
 LOG_FORMAT = 'telethon-userbot | %(asctime)s - %(levelname)s - %(message)s'
 LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
-LOG_LEVEL = 'INFO'
+LOG_LEVEL = 'INFO'  # Уровень логирования (DEBUG, INFO, WARNING, ERROR)
 
-# Путь к сессии
+# ===== ПУТИ К ФАЙЛАМ =====
+# Путь к файлу сессии Telegram
 SESSION_PATH = "session/userbot"

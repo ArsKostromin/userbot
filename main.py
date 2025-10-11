@@ -2,7 +2,7 @@ import asyncio
 import logging
 from telethon import events
 
-from config import TARGET_CHAT_USERNAME, LOG_FORMAT, LOG_DATE_FORMAT, LOG_LEVEL
+from config import LOG_FORMAT, LOG_DATE_FORMAT, LOG_LEVEL
 from telegram_client import create_client, initialize_client
 from message_handler import handle_new_message
 
@@ -17,34 +17,39 @@ logger = logging.getLogger(__name__)
 # --- ОСНОВНАЯ ФУНКЦИЯ ---
 
 async def main():
-    # Создаем клиент
+    """
+    Основная функция userbot'а
+    Мониторит ВСЕ чаты на предмет Star Gifts
+    """
+    # Создаем Telegram клиент
     client = create_client()
     
-    async with client:
-        # Инициализируем клиент
+    try:
+        # Инициализируем клиент (подключаемся и проверяем авторизацию)
         if not await initialize_client(client):
+            logger.error("❌ Не удалось инициализировать клиент")
             return
         
-        try:
-            logger.info(f"🔎 Ищем чат: {TARGET_CHAT_USERNAME}...")
-            chat = await client.get_entity(TARGET_CHAT_USERNAME)
-            chat_name = getattr(chat, 'title', getattr(chat, 'username', str(chat.id)))
-            logger.info(f"👍 Чат '{chat_name}' найден. Начинаю мониторинг новых сообщений...")
-
-        except Exception as e:
-            logger.error(f"❌ Произошла непредвиденная ошибка при поиске чата: {e}")
-            return
-
-        # Регистрируем обработчик новых сообщений
+        logger.info("🔄 Userbot запущен и мониторит ВСЕ чаты на предмет Star Gifts...")
+        logger.info("💡 Для остановки нажмите Ctrl+C")
+        
+        # Регистрируем обработчик новых сообщений для ВСЕХ чатов
         @client.on(events.NewMessage)
         async def new_message_handler(event):
-            await handle_new_message(event, chat, client)
-        
-        logger.info("🔄 Userbot запущен и мониторит новые сообщения...")
-        logger.info("💡 Для остановки нажмите Ctrl+C")
+            # Передаем только client, так как теперь мониторим все чаты
+            await handle_new_message(event, client)
         
         # Запускаем мониторинг (будет работать до остановки)
         await client.run_until_disconnected()
+        
+    except KeyboardInterrupt:
+        logger.info("🛑 Получен сигнал остановки...")
+    except Exception as e:
+        logger.error(f"❌ Критическая ошибка: {e}")
+    finally:
+        # Отключаемся от Telegram
+        await client.disconnect()
+        logger.info("👋 Userbot остановлен")
 
 if __name__ == "__main__":
     asyncio.run(main())

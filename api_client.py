@@ -1,5 +1,6 @@
 """
 Модуль для работы с Django API
+Отправляет данные о подарках на сервер Django
 """
 import aiohttp
 import logging
