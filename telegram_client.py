@@ -5,6 +5,7 @@
 import logging
 from telethon import TelegramClient
 from config import API_ID, API_HASH, SESSION_PATH
+from auth_handler import authorize_with_code, check_authorization_status
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +30,21 @@ def create_client():
 async def initialize_client(client):
     """
     Инициализирует клиент и проверяет авторизацию
+    Если сессии нет, пытается авторизоваться автоматически
     """
     # Подключаемся к клиенту
     await client.connect()
     
-    if not await client.is_user_authorized():
-        logger.error("❌ Авторизация не удалась.")
-        await client.disconnect()
-        return False
+    # Проверяем статус авторизации
+    if not await check_authorization_status(client):
+        logger.info("🔐 Сессия не найдена, начинаю процесс авторизации...")
+        
+        # Пытаемся авторизоваться с кодом
+        if not await authorize_with_code(client):
+            await client.disconnect()
+            return False
 
+    # Получаем информацию о текущем пользователе
     me = await client.get_me()
     user_info = f"{me.first_name or ''} (@{me.username})" if me else "Unknown User"
     logger.info(f"✅ Успешная авторизация под аккаунтом: {user_info.strip()}")
