@@ -1,227 +1,148 @@
-"""
-Модуль для обработки сообщений Telegram
-Логирует ВСЕ сообщения и обрабатывает Star Gifts
-
-Логика обработки сообщений находится в файле: message_handler.py
-"""
-import json
 import logging
-from gift_processor import extract_gift_data, get_sender_info
-from api_client import send_gift_to_api
+import json
+import requests
+import os
 
 logger = logging.getLogger(__name__)
 
-
-async def handle_new_message(event, client):
-    """
-    Обрабатывает ВСЕ новые сообщения и логирует их
-    Проверяет, является ли сообщение Star Gift и обрабатывает соответственно
-    
-    Логика находится в файле: message_handler.py
-    """
-    message = event.message
-    
-    # Получаем информацию о чате для логирования
-    try:
-        chat = await client.get_entity(message.chat_id)
-        chat_name = getattr(chat, 'title', getattr(chat, 'username', f"Chat {message.chat_id}"))
-        chat_username = getattr(chat, 'username', None)
-    except Exception as e:
-        chat_name = f"Unknown Chat {message.chat_id}"
-        chat_username = None
-        logger.debug(f"Не удалось получить информацию о чате {message.chat_id}: {e}")
-    
-    # Получаем информацию об отправителе
-    sender_id = getattr(message, 'sender_id', None)
-    sender_info = None
-    if sender_id:
-        try:
-            sender_info = await get_sender_info(client, sender_id)
-        except Exception as e:
-            logger.debug(f"Не удалось получить информацию об отправителе {sender_id}: {e}")
-    
-    # Формируем информацию об отправителе для логов
-    sender_name = "Unknown"
-    sender_username = ""
-    if sender_info:
-        sender_name = sender_info.get('sender_first_name', 'Unknown')
-        sender_username = sender_info.get('sender_username', '')
-        if sender_username:
-            sender_display = f"{sender_name} (@{sender_username})"
-        else:
-            sender_display = sender_name
-    else:
-        sender_display = f"User {sender_id}" if sender_id else "Unknown"
-    
-    # Логируем ВСЕ сообщения
-    logger.info(f"📨 Новое сообщение в чате '{chat_name}' от {sender_display}")
-    logger.info(f"   📍 Чат ID: {message.chat_id}")
-    logger.info(f"   📍 Сообщение ID: {getattr(message, 'id', 'N/A')}")
-    logger.info(f"   📍 Дата: {getattr(message, 'date', 'N/A')}")
-    
-    # Логируем тип сообщения
-    message_type = "Текстовое сообщение"
-    if getattr(message, 'action', None):
-        action_type = type(message.action).__name__
-        message_type = f"Действие: {action_type}"
-        logger.info(f"   🎭 Тип: {message_type}")
-        
-        # Обрабатываем разные типы подарков
-        if action_type == 'MessageActionStarGiftUnique':
-            logger.warning(f"🎁 НАЙДЕН STAR GIFT в чате '{chat_name}'!")
-            await handle_star_gift(message, client, chat_name, chat_username, sender_info)
-        elif action_type == 'MessageActionUserGift':
-            logger.warning(f"🎁 НАЙДЕН ОБЫЧНЫЙ ПОДАРОК в чате '{chat_name}'!")
-            await handle_user_gift(message, client, chat_name, chat_username, sender_info)
-    else:
-        # Логируем содержимое текстового сообщения (если есть)
-        text_content = getattr(message, 'text', '')
-        if text_content:
-            # Ограничиваем длину текста для логов
-            display_text = text_content[:100] + "..." if len(text_content) > 100 else text_content
-            logger.info(f"   📝 Текст: {display_text}")
-        else:
-            logger.info(f"   📝 Тип: {message_type}")
-    
-    # Логируем медиа (если есть)
-    if hasattr(message, 'media') and message.media:
-        logger.info(f"   🖼️ Медиа: {type(message.media).__name__}")
-    
-    logger.info("   " + "─" * 50)  # Разделитель для читаемости логов
+# --- КОНФИГУРАЦИЯ БЭКЕНДА ---
+# Установите эти переменные окружения!
+API_URL = os.getenv("DJANGO_GIFT_WEBHOOK_URL")
+AUTH_TOKEN = os.getenv("DJANGO_API_TOKEN") 
 
 
-async def handle_star_gift(message, client, chat_name, chat_username, sender_info):
+def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
     """
-    Обрабатывает Star Gift сообщение
-    Выделено в отдельную функцию для лучшей читаемости
+    Извлекает имя, permille и оригинальные детали атрибута (модель, фон, узор).
     """
-    # Извлекаем данные о подарке
-    gift_data = extract_gift_data(message.action, message)
-    
-    # Добавляем информацию о чате в данные подарка
-    gift_data["chat_info"] = {
-        "chat_id": message.chat_id,
-        "chat_name": chat_name,
-        "chat_username": chat_username
+    attr_data = {
+        'name': None,
+        'rarity_permille': None,
+        'original_details': None
     }
     
-    # Добавляем информацию об отправителе
-    if sender_info:
-        gift_data["sender_info"] = sender_info
-        
-        # Логируем информацию об отправителе
-        sender_name = sender_info.get('sender_first_name', 'Unknown')
-        sender_username = sender_info.get('sender_username', '')
-        if sender_username:
-            logger.info(f"👤 Отправитель подарка: {sender_name} (@{sender_username})")
-        else:
-            logger.info(f"👤 Отправитель подарка: {sender_name}")
+    # Ищем атрибут в списке
+    target_attr = next((attr for attr in gift_info_attributes if getattr(attr, 'name', None) == name), None)
     
-    # Выводим данные в консоль
+    if target_attr:
+        attr_data['name'] = getattr(target_attr, 'name', None)
+        attr_data['rarity_permille'] = getattr(target_attr, 'rarity_permille', None)
+        
+        original_details = getattr(target_attr, 'original_details', None)
+        if original_details:
+            attr_data['original_details'] = {
+                'id': getattr(original_details, 'id', None),
+                'type': getattr(original_details, 'type', None),
+                'name': getattr(original_details, 'name', None),
+            }
+    return attr_data
+
+def extract_gift_data(action) -> dict:
+    """
+    Извлекает все необходимые поля из action для GiftSerializer.
+    """
+    gift_info = getattr(action, 'gift', None)
+    if not gift_info:
+        return {}
+
+    attributes = getattr(gift_info, 'attributes', [])
+    model_details = get_attribute_details(attributes, 'Candy Stripe')
+    backdrop_details = get_attribute_details(attributes, 'Aquamarine')
+    pattern_details = get_attribute_details(attributes, 'Stocking')
+            
+    ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
+    gift_number = None
+    slug = getattr(gift_info, 'slug', None)
+    
+    if slug and '-' in slug:
+        number_part = slug.split('-')[-1]
+        if number_part.isdigit():
+            gift_number = '#' + number_part
+        
+    image_url = None
+    candy_stripe_attr = next((attr for attr in attributes if getattr(attr, 'name', None) == 'Candy Stripe'), None)
+    document = getattr(candy_stripe_attr, 'document', None)
+    if document:
+        image_url = f"https://t.me/sticker/{getattr(document, 'id', '')}"
+    
+    # --- Формируем данные для Django GiftSerializer ---
+    data = {
+        "ton_contract_address": ton_address, 
+        "name": f"{getattr(gift_info, 'title', 'Gift')} {gift_number}" if gift_number else getattr(gift_info, 'title', 'Gift'),
+        "image_url": image_url,
+        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None, 
+        
+        # Визуальные компоненты
+        "backdrop_name": backdrop_details['name'],
+        "model_name": model_details['name'],
+        "pattern_name": pattern_details['name'],
+        "symbol": slug, 
+        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
+
+        # Детали редкости
+        "model_rarity_permille": model_details['rarity_permille'],
+        "model_original_details": model_details['original_details'],
+        "pattern_rarity_permille": pattern_details['rarity_permille'],
+        "pattern_original_details": pattern_details['original_details'],
+        "backdrop_rarity_permille": backdrop_details['rarity_permille'],
+        "backdrop_original_details": backdrop_details['original_details'],
+    }
+    
+    # Очищаем словарь от None для чистоты JSON
+    return {k: v for k, v in data.items() if v is not None}
+
+
+async def send_to_django_backend(gift_data: dict, sender_id: int):
+    """
+    Отправляет извлеченные данные подарка на Django API.
+    """
+    if not API_URL:
+        logger.error("❌ Переменная DJANGO_GIFT_WEBHOOK_URL не установлена. Пропускаю отправку.")
+        return
+
+    headers = {
+        'Content-Type': 'application/json',
+        # Добавьте токен, если используете аутентификацию
+        'Authorization': f'Token {AUTH_TOKEN}' if AUTH_TOKEN else '',
+    }
+    
+    # Добавляем ID отправителя, который может понадобиться для связи с пользователем
+    gift_data['telegram_sender_id'] = sender_id 
+
+    try:
+        response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
+        response.raise_for_status() 
+        logger.info(f"🎉 Данные успешно отправлены в Django. Ответ: {response.status_code}")
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Ошибка отправки данных в Django (POST {API_URL}): {e}")
+        logger.debug(f"Данные, которые не удалось отправить: {gift_data}")
+
+
+async def handle_star_gift(message, client, **kwargs):
+    """
+    Основной обработчик для MessageActionStarGiftUnique.
+    """
+    action = getattr(message, 'action', None)
+    if not action or type(action).__name__ != 'MessageActionStarGiftUnique':
+        return
+
+    sender_id = getattr(message.sender, 'id', None)
+
+    # 1. Извлекаем данные
+    gift_data = extract_gift_data(action)
+    
+    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от пользователя ID: {sender_id}!")
+    
+    # 2. Логируем данные
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат) ---")
     print(json.dumps(gift_data, indent=4, ensure_ascii=False))
     logger.info("--------------------------------------------------")
     
-    # Отправляем данные в API
-    api_success = await send_gift_to_api(gift_data)
-    if api_success:
-        logger.info("🎉 Подарок успешно обработан и сохранен!")
-    else:
-        logger.warning("⚠️ Подарок найден, но не удалось сохранить в API")
-
-
-async def handle_user_gift(message, client, chat_name, chat_username, sender_info):
-    """
-    Обрабатывает обычный подарок пользователя (MessageActionUserGift)
-    """
-    logger.info("🔍 Анализирую обычный подарок пользователя...")
-    
-    # Логируем всю информацию о подарке
-    action = message.action
-    logger.info("--- 📋 Полная информация о подарке ---")
-    logger.info(f"   🎁 Тип действия: {type(action).__name__}")
-    
-    # Извлекаем доступную информацию из action
-    gift_data = {
-        "gift_type": "user_gift",
-        "message_id": getattr(message, 'id', None),
-        "chat_id": message.chat_id,
-        "chat_name": chat_name,
-        "chat_username": chat_username,
-        "date": str(getattr(message, 'date', 'N/A')),
-    }
-    
-    # Добавляем информацию об отправителе
-    if sender_info:
-        gift_data["sender_info"] = sender_info
-        sender_name = sender_info.get('sender_first_name', 'Unknown')
-        sender_username = sender_info.get('sender_username', '')
-        if sender_username:
-            logger.info(f"👤 Отправитель подарка: {sender_name} (@{sender_username})")
-        else:
-            logger.info(f"👤 Отправитель подарка: {sender_name}")
-    
-    # Пытаемся извлечь дополнительную информацию из action
-    try:
-        # Логируем все доступные атрибуты action
-        logger.info("   🔍 Доступные атрибуты action:")
-        for attr_name in dir(action):
-            if not attr_name.startswith('_'):
-                try:
-                    attr_value = getattr(action, attr_name)
-                    if not callable(attr_value):
-                        logger.info(f"      {attr_name}: {attr_value}")
-                        gift_data[f"action_{attr_name}"] = str(attr_value)
-                except Exception as e:
-                    logger.debug(f"      {attr_name}: <не удалось получить: {e}>")
+    # 3. Отправляем на бэкенд
+    if gift_data:
+        await send_to_django_backend(gift_data, sender_id)
         
-        # Пытаемся найти информацию о подарке
-        if hasattr(action, 'gift'):
-            gift_info = action.gift
-            logger.info("   🎁 Найдена информация о подарке:")
-            gift_data["gift_info"] = {}
-            
-            for attr_name in dir(gift_info):
-                if not attr_name.startswith('_'):
-                    try:
-                        attr_value = getattr(gift_info, attr_name)
-                        if not callable(attr_value):
-                            logger.info(f"      gift.{attr_name}: {attr_value}")
-                            gift_data["gift_info"][attr_name] = str(attr_value)
-                    except Exception as e:
-                        logger.debug(f"      gift.{attr_name}: <не удалось получить: {e}>")
-        
-        # Пытаемся найти информацию о получателе
-        if hasattr(action, 'user_id'):
-            recipient_id = action.user_id
-            logger.info(f"   👤 Получатель подарка: {recipient_id}")
-            gift_data["recipient_id"] = recipient_id
-            
-            # Пытаемся получить информацию о получателе
-            try:
-                recipient_info = await get_sender_info(client, recipient_id)
-                gift_data["recipient_info"] = recipient_info
-                recipient_name = recipient_info.get('sender_first_name', 'Unknown')
-                recipient_username = recipient_info.get('sender_username', '')
-                if recipient_username:
-                    logger.info(f"   👤 Получатель: {recipient_name} (@{recipient_username})")
-                else:
-                    logger.info(f"   👤 Получатель: {recipient_name}")
-            except Exception as e:
-                logger.warning(f"   ⚠️ Не удалось получить информацию о получателе: {e}")
-        
-    except Exception as e:
-        logger.error(f"   ❌ Ошибка при анализе подарка: {e}")
-    
-    # Выводим полные данные в консоль
-    logger.info("--- 📦 Полные данные о подарке (JSON-формат) ---")
-    print(json.dumps(gift_data, indent=4, ensure_ascii=False))
-    logger.info("--------------------------------------------------")
-    
-    # Отправляем данные в API
-    logger.info("🚀 Отправляю данные о подарке в Django API...")
-    api_success = await send_gift_to_api(gift_data)
-    if api_success:
-        logger.info("🎉 Обычный подарок успешно обработан и сохранен!")
-    else:
-        logger.warning("⚠️ Обычный подарок найден, но не удалось сохранить в API")
+    # ВНИМАНИЕ: Если вы хотите, чтобы это сообщение было отмечено как прочитанное 
+    # только после успешной обработки, здесь можно добавить логику.
+    # Для целей истории, лучше читать их по умолчанию.
