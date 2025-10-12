@@ -110,14 +110,31 @@ async def send_to_django_backend(gift_data: dict, sender_id: int):
     # Добавляем ID отправителя, который может понадобиться для связи с пользователем
     gift_data['telegram_sender_id'] = sender_id 
 
+
     try:
+        # 💬 Логируем тело запроса
+        logger.info("=== 📤 Отправка данных в Django API ===")
+        logger.info(f"URL: {API_URL}")
+        logger.info(f"Заголовки: {headers}")
+        logger.info(f"Тело запроса:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
+        logger.info("=======================================")
+
+        # Сам запрос
         response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
-        response.raise_for_status() 
-        logger.info(f"🎉 Данные успешно отправлены в Django. Ответ: {response.status_code}")
-        
+
+        # Проверяем ответ
+        if response.status_code >= 200 and response.status_code < 300:
+            logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
+            logger.debug(f"Ответ Django:\n{response.text}")
+        else:
+            logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django!")
+            logger.error(f"Ответ сервера:\n{response.text}")
+
+        response.raise_for_status()
+
     except requests.exceptions.RequestException as e:
-        logger.error(f"❌ Ошибка отправки данных в Django (POST {API_URL}): {e}")
-        logger.debug(f"Данные, которые не удалось отправить: {gift_data}")
+        logger.error(f"❌ Ошибка при POST {API_URL}: {e}")
+        logger.debug(f"Неотправленные данные:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
 
 
 async def handle_star_gift(message, client, **kwargs):
