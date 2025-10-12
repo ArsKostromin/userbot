@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 # --- КОНФИГУРАЦИЯ БЭКЕНДА ---
 # Установите эти переменные окружения!
 API_BASE_URL = config.API_BASE_URL
-API_URL = f"{API_BASE_URL}/api/gifts/adds-gift/"
+API_URL = f"{API_BASE_URL}/Inventory/adds-gift/"
 AUTH_TOKEN = config.API_TOKEN
 
 
