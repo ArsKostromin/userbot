@@ -1,15 +1,15 @@
 import logging
 import json
 import requests
-import os
 import config
 
 logger = logging.getLogger(__name__)
 
 # --- КОНФИГУРАЦИЯ БЭКЕНДА ---
 # Установите эти переменные окружения!
-API_URL = config.API_BASE_URL
-AUTH_TOKEN = os.getenv("DJANGO_API_TOKEN") 
+API_BASE_URL = config.API_BASE_URL
+API_URL = f"{API_BASE_URL}/api/gifts/adds-gift/"
+AUTH_TOKEN = config.API_TOKEN
 
 
 def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
