@@ -2,12 +2,13 @@ import logging
 import json
 import requests
 import os
+import config
 
 logger = logging.getLogger(__name__)
 
 # --- КОНФИГУРАЦИЯ БЭКЕНДА ---
 # Установите эти переменные окружения!
-API_URL = os.getenv("DJANGO_GIFT_WEBHOOK_URL")
+API_URL = config.API_BASE_URL
 AUTH_TOKEN = os.getenv("DJANGO_API_TOKEN") 
 
 
