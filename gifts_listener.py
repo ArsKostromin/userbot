@@ -79,7 +79,7 @@ async def process_chat_history(client):
                 total_processed_gifts += 1
                 
                 logger.warning(f"📜 (Unread History) Найден NFT в MSG_ID: {message.id} в чате '{chat_name}'")
-                
+                logger.warning(f"📜 (Unread History) '{message}'")
                 try:
                     await handle_star_gift(message, client)
                     processed_ids.append(message.id)
