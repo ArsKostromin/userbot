@@ -1,15 +1,13 @@
 FROM python:3.11-slim
 
-# Устанавливаем системные зависимости: Node.js и пакеты для Pillow.
-# Node.js и npm нужны для установки tgs-converter.
+# Устанавливаем системные зависимости для Pillow и, возможно, для сборки lottie-python.
+# libjpeg-dev и libgif-dev нужны для Pillow
+# 💡 ИСПРАВЛЕНИЕ: Удаляем Node.js/npm. Возвращаем инструменты сборки, чтобы обеспечить компиляцию lottie-python.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libjpeg-dev \
     libgif-dev \
-    nodejs \
-    npm \
-    # 💡 ИСПРАВЛЕНИЕ: Используем --prefix /usr/local, чтобы tgs-converter попал в /usr/local/bin, 
-    # который гарантированно находится в PATH.
-    && npm install -g tgs-converter --prefix /usr/local \
+    build-essential \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
