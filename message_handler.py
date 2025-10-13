@@ -63,7 +63,7 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
     finally:
         for f in [temp_tgs_path, temp_gif_path]:
             if os.path.exists(f):
-                os.remove(f)
+                return
 
 
 def extract_gift_data(action) -> dict:
