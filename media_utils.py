@@ -2,7 +2,7 @@ import os
 import asyncio
 import logging
 from PIL import Image
-import rlottie
+import rlottie_python as rlottie
 import numpy as np
 
 logger = logging.getLogger(__name__)
