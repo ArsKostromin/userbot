@@ -21,13 +21,13 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
         'rarity_permille': None,
         'original_details': None
     }
-    
+
     target_attr = next((attr for attr in gift_info_attributes if getattr(attr, 'name', None) == name), None)
-    
+
     if target_attr:
         attr_data['name'] = getattr(target_attr, 'name', None)
         attr_data['rarity_permille'] = getattr(target_attr, 'rarity_permille', None)
-        
+
         original_details = getattr(target_attr, 'original_details', None)
         if original_details:
             attr_data['original_details'] = {
@@ -38,7 +38,7 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
     return attr_data
 
 
-def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None) -> dict:
+def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, message=None) -> dict:
     """
     Извлекает все необходимые поля из action для GiftSerializer.
     """
@@ -57,17 +57,31 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None) 
 
     # --- 🖼 Попытка достать реальный image_url ---
     image_url = None
-    document = getattr(gift_info, 'document', None)
-    if document and getattr(document, 'id', None):
-        image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
-    elif hasattr(gift_info, 'media_url'):
-        image_url = getattr(gift_info, 'media_url')
-    elif hasattr(gift_info, 'thumb_url'):
-        image_url = getattr(gift_info, 'thumb_url')
+
+    # 1️⃣ Попробуем достать из message.media.document
+    if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
+        document = message.media.document
+        file_id = getattr(document, 'id', None)
+        if file_id:
+            image_url = f"https://t.me/sticker/{file_id}"
+
+    # 2️⃣ Попробуем достать из gift_info (если есть)
+    if not image_url:
+        document = getattr(gift_info, 'document', None)
+        if document and getattr(document, 'id', None):
+            image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
+        elif hasattr(gift_info, 'media_url'):
+            image_url = getattr(gift_info, 'media_url')
+        elif hasattr(gift_info, 'thumb_url'):
+            image_url = getattr(gift_info, 'thumb_url')
+
+    # 3️⃣ Фолбэк (если ни один вариант не сработал)
+    if not image_url:
+        image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
 
     # --- 🧠 Формируем данные для Django ---
     data = {
-        "user": sender_id,  # можно заменить на sender_name, если нужно имя
+        "user": sender_id,
         "telegram_sender_id": sender_id,
         "telegram_sender_name": sender_name,
         "telegram_chat_name": chat_name,
@@ -88,7 +102,6 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None) 
         "backdrop_rarity_permille": backdrop_details['rarity_permille'],
     }
 
-    # Убираем None и пустые значения
     return {k: v for k, v in data.items() if v is not None}
 
 
@@ -143,7 +156,13 @@ async def handle_star_gift(message, client, **kwargs):
 
     logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
 
-    gift_data = extract_gift_data(action, sender_id=sender_id, sender_name=sender_name, chat_name=chat_name)
+    gift_data = extract_gift_data(
+        action,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        chat_name=chat_name,
+        message=message
+    )
 
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат) ---")
     print(json.dumps(gift_data, indent=4, ensure_ascii=False))
@@ -151,5 +170,3 @@ async def handle_star_gift(message, client, **kwargs):
 
     if gift_data:
         await send_to_django_backend(gift_data)
-
-    # Тут можно добавить отметку сообщения как прочитанного после успешной обработки
