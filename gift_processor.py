@@ -39,40 +39,49 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
 
 def extract_gift_data(action, message) -> dict:
     """
-    Извлекает все необходимые поля из подарка, включая атрибуты, оригинальные детали,
-    редкость и данные отправителя, используя объект message целиком.
+    Универсальный парсер StarGift, вытаскивает атрибуты по типу, а не по имени.
     """
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         return {}
 
-    # --- Извлечение атрибутов ---
     attributes = getattr(gift_info, 'attributes', [])
-    model_details = get_attribute_details(attributes, 'Candy Stripe')
-    backdrop_details = get_attribute_details(attributes, 'Azure Blue')  # Пример из твоего лога
-    pattern_details = get_attribute_details(attributes, 'Spades')      # Пример из твоего лога
 
-    # --- TON адрес и slug ---
+    # --- Достаём атрибуты по типу ---
+    model_attr = next((a for a in attributes if a.__class__.__name__ == "StarGiftAttributeModel"), None)
+    pattern_attr = next((a for a in attributes if a.__class__.__name__ == "StarGiftAttributePattern"), None)
+    backdrop_attr = next((a for a in attributes if a.__class__.__name__ == "StarGiftAttributeBackdrop"), None)
+
+    def attr_details(attr):
+        if not attr:
+            return {"name": None, "rarity_permille": None, "original_details": None}
+        return {
+            "name": getattr(attr, "name", None),
+            "rarity_permille": getattr(attr, "rarity_permille", None),
+            "original_details": getattr(attr, "original_details", None)
+        }
+
+    model_details = attr_details(model_attr)
+    pattern_details = attr_details(pattern_attr)
+    backdrop_details = attr_details(backdrop_attr)
+
+    # --- TON и slug ---
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
     slug = getattr(gift_info, 'slug', None)
 
-    # --- Формирование URL изображения ---
+    # --- Картинка ---
     image_url = None
-    # Пробуем взять изображение из любого атрибута, если есть document
     for attr in attributes:
         document = getattr(attr, 'document', None)
         if document and getattr(document, 'id', None):
             image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
             break
-    # fallback
     if not image_url:
         image_url = getattr(gift_info, 'media_url', None) or getattr(gift_info, 'thumb_url', None) or "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
 
-    # --- Данные отправителя ---
     sender_id = getattr(message, 'sender_id', None)
     sender_name = getattr(message.sender, 'first_name', None) if hasattr(message, 'sender') else None
 
-    # --- Формируем итоговый словарь ---
     data = {
         "id": getattr(gift_info, 'id', None),
         "user": sender_id,
@@ -85,23 +94,21 @@ def extract_gift_data(action, message) -> dict:
         "symbol": slug,
         "image_url": image_url,
         "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
-
         "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
 
-        "model_name": model_details['name'],
-        "model_rarity_permille": model_details['rarity_permille'],
-        "model_original_details": model_details['original_details'],
+        "model_name": model_details["name"],
+        "model_rarity_permille": model_details["rarity_permille"],
+        "model_original_details": model_details["original_details"],
 
-        "pattern_name": pattern_details['name'],
-        "pattern_rarity_permille": pattern_details['rarity_permille'],
-        "pattern_original_details": pattern_details['original_details'],
+        "pattern_name": pattern_details["name"],
+        "pattern_rarity_permille": pattern_details["rarity_permille"],
+        "pattern_original_details": pattern_details["original_details"],
 
-        "backdrop_name": backdrop_details['name'],
-        "backdrop_rarity_permille": backdrop_details['rarity_permille'],
-        "backdrop_original_details": backdrop_details['original_details'],
+        "backdrop_name": backdrop_details["name"],
+        "backdrop_rarity_permille": backdrop_details["rarity_permille"],
+        "backdrop_original_details": backdrop_details["original_details"],
     }
 
-    # Убираем None значения
     return {k: v for k, v in data.items() if v is not None}
 
 
