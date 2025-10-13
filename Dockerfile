@@ -1,13 +1,15 @@
 FROM python:3.11-slim
 
-
+# Устанавливаем системные зависимости: Node.js и пакеты для Pillow.
+# Node.js и npm нужны для установки tgs-converter.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libcairo2-dev \
-    libpango1.0-dev \
     libjpeg-dev \
     libgif-dev \
-    pkg-config \
-    git \
+    nodejs \
+    npm \
+    # 💡 ИСПРАВЛЕНИЕ: Используем --prefix /usr/local, чтобы tgs-converter попал в /usr/local/bin, 
+    # который гарантированно находится в PATH.
+    && npm install -g tgs-converter --prefix /usr/local \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -15,7 +17,8 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Устанавливаем Python-зависимости
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
