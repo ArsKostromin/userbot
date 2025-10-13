@@ -5,11 +5,8 @@ import config
 import os
 import asyncio
 from telethon import utils
-# 💡 ИСПРАВЛЕНИЕ: Используем Pillow для работы с изображениями 
-# и python-lottie для TGS -> GIF
 from PIL import Image
-from lottie.importers.tgs import import_tgs
-from lottie.exporters.gif import export_gif 
+import rlottie
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +19,14 @@ MEDIA_ROOT = "/app/media"
 
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Скачивает TGS-стикер, конвертирует его в GIF, а затем извлекает 
-    первый кадр и сохраняет его как JPEG.
+    Скачивает TGS-стикер, конвертирует его в JPEG.
     """
     if not document or not slug:
         return None
 
-    # Убеждаемся, что папка media существует
     os.makedirs(MEDIA_ROOT, exist_ok=True)
 
-    # Определяем пути для временных и финального файлов
     temp_tgs_path = os.path.join(MEDIA_ROOT, f"{slug}.tgs")
-    temp_gif_path = os.path.join(MEDIA_ROOT, f"{slug}.gif")
     final_jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
     relative_url = f"/media/{slug}.jpeg"
 
@@ -42,22 +35,20 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.info(f"📁 Скачивание стикера в {temp_tgs_path}...")
         await client.download_media(document, file=temp_tgs_path)
 
-        # 2. Конвертируем TGS в GIF с использованием python-lottie
-        logger.info(f"🔄 Конвертация {temp_tgs_path} в {temp_gif_path} (временный GIF)...")
+        # 2. Конвертируем TGS в первый кадр JPEG через rlottie
+        logger.info(f"🔄 Конвертация {temp_tgs_path} в JPEG {final_jpeg_path}...")
         loop = asyncio.get_running_loop()
-        # Запускаем синхронные Lottie-функции в отдельном потоке
-        await loop.run_in_executor(None, lambda: export_gif(import_tgs(temp_tgs_path), temp_gif_path))
 
-        # 3. Конвертируем первый кадр GIF в JPEG с использованием Pillow
-        logger.info(f"🖼️ Извлечение первого кадра GIF и сохранение в {final_jpeg_path} (JPEG)...")
-        def convert_gif_to_jpeg():
-            with Image.open(temp_gif_path) as img:
-                img.seek(0)  # Берем первый кадр
-                # Конвертируем в RGB (JPEG не поддерживает прозрачность) и сохраняем
-                img.convert('RGB').save(final_jpeg_path, 'jpeg')
-        
-        await loop.run_in_executor(None, convert_gif_to_jpeg)
-        
+        def convert_tgs_to_jpeg():
+            with open(temp_tgs_path, "rb") as f:
+                tgs_data = f.read()
+            anim = rlottie.Animation.from_bytes(tgs_data)
+            frame = anim.render(0, anim.width, anim.height)
+            img = Image.fromarray(frame).convert("RGB")
+            img.save(final_jpeg_path, "JPEG")
+
+        await loop.run_in_executor(None, convert_tgs_to_jpeg)
+
         logger.info(f"✅ Изображение успешно сконвертировано и сохранено.")
         return relative_url
 
@@ -65,11 +56,8 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.error(f"❌ Ошибка при скачивании или конвертации изображения: {e}")
         return None
     finally:
-        # 4. Удаляем временные файлы
         if os.path.exists(temp_tgs_path):
             os.remove(temp_tgs_path)
-        if os.path.exists(temp_gif_path):
-            os.remove(temp_gif_path)
 
 
 def extract_gift_data(action) -> dict:
@@ -87,17 +75,14 @@ def extract_gift_data(action) -> dict:
     def get_details(attr_obj):
         if not attr_obj:
             return None, None, None
-        
         name = getattr(attr_obj, 'name', None)
         rarity = getattr(attr_obj, 'rarity_permille', None)
         orig = getattr(attr_obj, 'original_details', None)
-        
         orig_details = {
             "id": getattr(orig, "id", None),
             "type": getattr(orig, "type", None),
             "name": getattr(orig, "name", None),
         } if orig else None
-        
         return name, rarity, orig_details
 
     model_name, model_rarity, model_orig = get_details(model_attr)
@@ -161,7 +146,6 @@ async def send_to_django_backend(gift_data: dict):
 
 async def handle_star_gift(message, client, **kwargs):
     action = getattr(message, 'action', None)
-    # 💡 ИСПРАВЛЕНИЕ: Корректный тип для Star Gift — MessageActionStarGiftUnique
     if not action or type(action).__name__ != 'MessageActionStarGiftUnique': 
         return
 
@@ -173,7 +157,6 @@ async def handle_star_gift(message, client, **kwargs):
 
     gift_data = extract_gift_data(action)
     
-    # Скачиваем и конвертируем изображение
     gift_info = getattr(action, 'gift', None)
     image_url = None
     if gift_info:
@@ -184,7 +167,6 @@ async def handle_star_gift(message, client, **kwargs):
         if document and slug:
             image_url = await download_and_convert_image(client, document, slug)
     
-    # Обновляем URL или используем заглушку
     gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
     if not image_url:
         logger.warning("⚠️ Не удалось создать локальное изображение. Используется заглушка.")
