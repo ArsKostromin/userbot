@@ -2,26 +2,62 @@ import logging
 import json
 import requests
 import config
+import os
+import asyncio
 from telethon import utils
+from lottie_converter.exporters.jpeg import export_jpeg
 
 logger = logging.getLogger(__name__)
 
-# --- КОНФИГУРАЦИЯ БЭКЕНДА ---
+# --- КОНФИГУРАЦИЯ БЭКЕНДА И ПУТЕЙ ---
 API_BASE_URL = getattr(config, 'API_BASE_URL', None)
 API_URL = f"{API_BASE_URL}/Inventory/adds-gift/" if API_BASE_URL else None
 AUTH_TOKEN = getattr(config, 'API_TOKEN', None)
+MEDIA_ROOT = "/app/media"
 
 
-def extract_gift_data(action, message) -> dict:
+async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Извлекает максимум информации о подарке, определяя атрибуты по их типу.
+    Скачивает TGS-стикер, конвертирует его в JPEG и возвращает относительный URL.
     """
+    if not document or not slug:
+        return None
+
+    # Временный путь для скачивания .tgs файла
+    temp_tgs_path = os.path.join(MEDIA_ROOT, f"{slug}.tgs")
+    # Финальный путь для .jpeg файла
+    final_jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
+    # Относительный URL для отправки в Django
+    relative_url = f"/media/{slug}.jpeg"
+
+    try:
+        logger.info(f"📁 Скачивание стикера в {temp_tgs_path}...")
+        await client.download_media(document, file=temp_tgs_path)
+
+        logger.info(f"🔄 Конвертация {temp_tgs_path} в {final_jpeg_path}...")
+        # Запускаем синхронную функцию конвертации в отдельном потоке
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, export_jpeg, temp_tgs_path, final_jpeg_path)
+        
+        logger.info(f"✅ Изображение успешно сконвертировано и сохранено.")
+        return relative_url
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при скачивании или конвертации изображения: {e}")
+        return None
+    finally:
+        # Удаляем временный .tgs файл
+        if os.path.exists(temp_tgs_path):
+            os.remove(temp_tgs_path)
+
+
+def extract_gift_data(action) -> dict:
+    # ... (Эта функция остается без изменений) ...
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         logger.warning("⚠️ Объект 'gift' не найден в action, обработка невозможна.")
         return {}
 
-    # --- 1. Извлечение атрибутов (Model, Pattern, Backdrop) по типу объекта ---
     attributes = getattr(gift_info, 'attributes', [])
     
     model_attr = next((attr for attr in attributes if type(attr).__name__ == 'StarGiftAttributeModel'), None)
@@ -29,7 +65,6 @@ def extract_gift_data(action, message) -> dict:
     backdrop_attr = next((attr for attr in attributes if type(attr).__name__ == 'StarGiftAttributeBackdrop'), None)
 
     def get_details(attr_obj):
-        """Вспомогательная функция для извлечения деталей из атрибута."""
         if not attr_obj:
             return None, None, None
         
@@ -49,40 +84,20 @@ def extract_gift_data(action, message) -> dict:
     pattern_name, pattern_rarity, pattern_orig = get_details(pattern_attr)
     backdrop_name, backdrop_rarity, backdrop_orig = get_details(backdrop_attr)
 
-    # --- 2. Извлечение основной информации о подарке ---
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
     title = getattr(gift_info, 'title', 'Gift')
     slug = getattr(gift_info, 'slug', None)
-    
-    # ID самого объекта подарка
     gift_id_tg = getattr(gift_info, 'id', None)
-    
-    # Цена и общая редкость
     rarity_level = getattr(getattr(gift_info, 'rarity_level', None), 'name', None)
     value_amount = getattr(gift_info, 'value_amount', None)
     price_ton = value_amount / 100 if value_amount else None
 
-    # --- 3. Правильное извлечение Image URL ---
-    image_url = None
-    # Изображение чаще всего находится в документе атрибута Модели
-    if model_attr and getattr(model_attr, 'document', None):
-        doc_id = getattr(model_attr.document, 'id', None)
-        if doc_id:
-            image_url = f"https://t.me/sticker/{doc_id}"
-            logger.debug(f"🖼 Image URL извлечен из атрибута Модели: {image_url}")
-    
-    if not image_url:
-        image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
-        logger.warning("⚠️ Не удалось извлечь реальный image_url. Используется заглушка.")
-
-    # --- 4. Сборка финального словаря ---
     gift_data = {
         "id": gift_id_tg,
         "ton_contract_address": ton_address,
         "name": title,
-        "image_url": image_url,
         "price_ton": price_ton,
-        "backdrop": backdrop_name, # <-- Это поле дублирует backdrop_name, но оставляю, так как оно в вашем списке
+        "backdrop": backdrop_name,
         "symbol": slug,
         "model_name": model_name,
         "pattern_name": pattern_name,
@@ -96,16 +111,13 @@ def extract_gift_data(action, message) -> dict:
         "backdrop_name": backdrop_name,
     }
 
-    # Возвращаем словарь, очищенный от пустых значений
     return {k: v for k, v in gift_data.items() if v is not None}
 
 
 async def send_to_django_backend(gift_data: dict):
-    """
-    Отправляет извлеченные данные подарка на Django API.
-    """
+    # ... (Эта функция остается без изменений) ...
     if not API_URL:
-        logger.error("❌ Переменная API_URL не установлена (проверьте config.py). Пропускаю отправку.")
+        logger.error("❌ Переменная API_URL не установлена. Пропускаю отправку.")
         return
 
     headers = {
@@ -115,31 +127,22 @@ async def send_to_django_backend(gift_data: dict):
     
     try:
         logger.info("=== 📤 Отправка данных в Django API ===")
-        logger.info(f"URL: {API_URL}")
-        logger.debug(f"Тело запроса:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
-        
         response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
 
         if 200 <= response.status_code < 300:
             logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
-            logger.debug(f"Ответ Django:\n{response.text}")
         else:
-            logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django!")
-            logger.error(f"Ответ сервера:\n{response.text}")
+            logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django! Ответ: {response.text}")
 
         response.raise_for_status()
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Ошибка при POST {API_URL}: {e}")
-        logger.debug(f"Неотправленные данные:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
 
 
 async def handle_star_gift(message, client, **kwargs):
-    """
-    Основной обработчик для MessageActionStarGiftUnique.
-    """
     action = getattr(message, 'action', None)
-    if not action or type(action).__name__ != 'MessageActionStarGiftUnique':
+    if not action or type(action).__name__ != 'StarGiftAttributeModel':
         return
 
     sender_id = getattr(message.sender, 'id', None)
@@ -148,19 +151,29 @@ async def handle_star_gift(message, client, **kwargs):
 
     logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
 
-    # 1. Извлекаем все данные о подарке
-    gift_data = extract_gift_data(action, message=message)
+    gift_data = extract_gift_data(action)
     
-    # 2. Добавляем данные отправителя/чата в общий словарь
-    gift_data.update({
-        "user": sender_id, # Соответствует полю "user" в вашем списке
-    })
+    # 💡 ИЗМЕНЕНИЕ: Скачиваем и конвертируем изображение
+    gift_info = getattr(action, 'gift', None)
+    image_url = None
+    if gift_info:
+        model_attr = next((attr for attr in getattr(gift_info, 'attributes', []) if type(attr).__name__ == 'StarGiftAttributeModel'), None)
+        document = getattr(model_attr, 'document', None)
+        slug = gift_data.get('symbol')
+        
+        if document and slug:
+            image_url = await download_and_convert_image(client, document, slug)
+    
+    # Обновляем URL или используем заглушку
+    gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
+    if not image_url:
+        logger.warning("⚠️ Не удалось создать локальное изображение. Используется заглушка.")
 
-    # 3. Логирование всех данных, которые будут отправлены
+    gift_data.update({"user": sender_id})
+
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат, полные) ---")
     logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
     logger.info("--------------------------------------------------")
 
     if gift_data:
         await send_to_django_backend(gift_data)
-        
