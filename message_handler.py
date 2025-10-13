@@ -5,7 +5,11 @@ import config
 import os
 import asyncio
 from telethon import utils
-from lottie_converter.exporters.jpeg import export_jpeg
+# 💡 ИСПРАВЛЕНИЕ: Используем Pillow для работы с изображениями 
+# и python-lottie для TGS -> GIF
+from PIL import Image
+from lottie.importers.tgs import import_tgs
+from lottie.exporters.gif import export_gif 
 
 logger = logging.getLogger(__name__)
 
@@ -18,26 +22,41 @@ MEDIA_ROOT = "/app/media"
 
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Скачивает TGS-стикер, конвертирует его в JPEG и возвращает относительный URL.
+    Скачивает TGS-стикер, конвертирует его в GIF, а затем извлекает 
+    первый кадр и сохраняет его как JPEG.
     """
     if not document or not slug:
         return None
 
-    # Временный путь для скачивания .tgs файла
+    # Убеждаемся, что папка media существует
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+
+    # Определяем пути для временных и финального файлов
     temp_tgs_path = os.path.join(MEDIA_ROOT, f"{slug}.tgs")
-    # Финальный путь для .jpeg файла
+    temp_gif_path = os.path.join(MEDIA_ROOT, f"{slug}.gif")
     final_jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
-    # Относительный URL для отправки в Django
     relative_url = f"/media/{slug}.jpeg"
 
     try:
+        # 1. Скачиваем TGS файл
         logger.info(f"📁 Скачивание стикера в {temp_tgs_path}...")
         await client.download_media(document, file=temp_tgs_path)
 
-        logger.info(f"🔄 Конвертация {temp_tgs_path} в {final_jpeg_path}...")
-        # Запускаем синхронную функцию конвертации в отдельном потоке
+        # 2. Конвертируем TGS в GIF с использованием python-lottie
+        logger.info(f"🔄 Конвертация {temp_tgs_path} в {temp_gif_path} (временный GIF)...")
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, export_jpeg, temp_tgs_path, final_jpeg_path)
+        # Запускаем синхронные Lottie-функции в отдельном потоке
+        await loop.run_in_executor(None, lambda: export_gif(import_tgs(temp_tgs_path), temp_gif_path))
+
+        # 3. Конвертируем первый кадр GIF в JPEG с использованием Pillow
+        logger.info(f"🖼️ Извлечение первого кадра GIF и сохранение в {final_jpeg_path} (JPEG)...")
+        def convert_gif_to_jpeg():
+            with Image.open(temp_gif_path) as img:
+                img.seek(0)  # Берем первый кадр
+                # Конвертируем в RGB (JPEG не поддерживает прозрачность) и сохраняем
+                img.convert('RGB').save(final_jpeg_path, 'jpeg')
+        
+        await loop.run_in_executor(None, convert_gif_to_jpeg)
         
         logger.info(f"✅ Изображение успешно сконвертировано и сохранено.")
         return relative_url
@@ -46,13 +65,14 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.error(f"❌ Ошибка при скачивании или конвертации изображения: {e}")
         return None
     finally:
-        # Удаляем временный .tgs файл
+        # 4. Удаляем временные файлы
         if os.path.exists(temp_tgs_path):
             os.remove(temp_tgs_path)
+        if os.path.exists(temp_gif_path):
+            os.remove(temp_gif_path)
 
 
 def extract_gift_data(action) -> dict:
-    # ... (Эта функция остается без изменений) ...
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         logger.warning("⚠️ Объект 'gift' не найден в action, обработка невозможна.")
@@ -115,7 +135,6 @@ def extract_gift_data(action) -> dict:
 
 
 async def send_to_django_backend(gift_data: dict):
-    # ... (Эта функция остается без изменений) ...
     if not API_URL:
         logger.error("❌ Переменная API_URL не установлена. Пропускаю отправку.")
         return
@@ -142,7 +161,8 @@ async def send_to_django_backend(gift_data: dict):
 
 async def handle_star_gift(message, client, **kwargs):
     action = getattr(message, 'action', None)
-    if not action or type(action).__name__ != 'StarGiftAttributeModel':
+    # 💡 ИСПРАВЛЕНИЕ: Корректный тип для Star Gift — MessageActionStarGiftUnique
+    if not action or type(action).__name__ != 'MessageActionStarGiftUnique': 
         return
 
     sender_id = getattr(message.sender, 'id', None)
@@ -153,7 +173,7 @@ async def handle_star_gift(message, client, **kwargs):
 
     gift_data = extract_gift_data(action)
     
-    # 💡 ИЗМЕНЕНИЕ: Скачиваем и конвертируем изображение
+    # Скачиваем и конвертируем изображение
     gift_info = getattr(action, 'gift', None)
     image_url = None
     if gift_info:
