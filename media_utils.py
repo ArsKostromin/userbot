@@ -1,10 +1,9 @@
 import os
 import gzip
-import json
 import asyncio
 import logging
 from PIL import Image
-from lottie import objects, parsers, exporters
+from lottie import importers, exporters
 
 logger = logging.getLogger(__name__)
 MEDIA_ROOT = "/app/media"
@@ -27,14 +26,9 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.info(f"📁 Скачиваем TGS в {tgs_path}...")
         await client.download_media(document, file=tgs_path)
 
-        # --- Распаковываем GZIP ---
-        logger.info("🌀 Распаковываем TGS (gzip → JSON)...")
-        with gzip.open(tgs_path, "rb") as f:
-            data = json.load(f)
-
-        # --- Парсим в объект Lottie ---
-        logger.info("🎨 Загружаем JSON в lottie-анимацию...")
-        animation = parsers.tgs.parse_tgs(data)
+        # --- Читаем и парсим анимацию ---
+        logger.info("🎨 Загружаем TGS в lottie-анимацию...")
+        animation = importers.tgs_importer.tgs_read(tgs_path)
 
         # --- Экспортируем первый кадр ---
         logger.info("🖼️ Рендерим первый кадр...")
@@ -45,7 +39,7 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
 
     except Exception as e:
         logger.error(f"❌ Ошибка при конвертации TGS: {e}")
-        # fallback на заглушку
+        # fallback — серый квадрат
         try:
             placeholder = Image.new("RGB", (512, 512), color=(200, 200, 200))
             placeholder.save(jpeg_path, "JPEG")
