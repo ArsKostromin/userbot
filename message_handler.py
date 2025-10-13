@@ -9,9 +9,10 @@ logger = logging.getLogger(__name__)
 
 # --- КОНФИГУРАЦИЯ БЭКЕНДА ---
 # Используем константы из config
-API_BASE_URL = config.API_BASE_URL
-API_URL = f"{API_BASE_URL}/Inventory/adds-gift/"
-AUTH_TOKEN = config.API_TOKEN
+# Убедитесь, что config.py содержит API_BASE_URL и API_TOKEN
+API_BASE_URL = getattr(config, 'API_BASE_URL', None)
+API_URL = f"{API_BASE_URL}/Inventory/adds-gift/" if API_BASE_URL else None
+AUTH_TOKEN = getattr(config, 'API_TOKEN', None)
 
 # 💡 ТОЧНЫЕ ИМЕНА АТРИБУТОВ ИЗ TELETHON, которые вы хотите извлечь
 ATTRIBUTE_MAPPINGS = {
@@ -43,6 +44,7 @@ def parse_attributes(attributes):
     reverse_map = {}
     for django_key, tg_names in ATTRIBUTE_MAPPINGS.items():
         for tg_name in tg_names:
+            # Преобразуем имя в нижний регистр для нечувствительного сравнения
             reverse_map[tg_name.lower()] = django_key
 
     for attr in attributes or []:
@@ -50,13 +52,14 @@ def parse_attributes(attributes):
         rarity = getattr(attr, "rarity_permille", None)
         orig = getattr(attr, "original_details", None)
         
+        # Извлечение деталей оригинального объекта
         orig_details = {
             "id": getattr(orig, "id", None),
             "type": getattr(orig, "type", None),
             "name": getattr(orig, "name", None),
         } if orig else None
 
-        # Ищем точное соответствие или подстроку
+        # Ищем точное соответствие
         django_key = reverse_map.get((name or "").lower())
         
         if django_key:
@@ -83,7 +86,6 @@ def extract_gift_data(action, message) -> dict:
     attr_data = parse_attributes(attributes)
 
     # 1. Основные идентификаторы и данные
-    # TG ID (служит уникальным идентификатором, как ton_contract_address)
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
     title = getattr(gift_info, 'title', 'Gift')
     slug = getattr(gift_info, 'slug', None)
@@ -91,19 +93,20 @@ def extract_gift_data(action, message) -> dict:
     # 2. Цена и редкость
     rarity_level = getattr(getattr(gift_info, 'rarity_level', None), 'name', None)
     value_amount = getattr(gift_info, 'value_amount', None)
+    # Цена в Toncoin (value_amount обычно в centi-ton)
     price_ton = value_amount / 100 if value_amount else None
     
     # 3. Изображение
     image_url = None
     
-    # Поиск документа в основном сообщении (для сервисного сообщения Media в message)
+    # Поиск документа в message (для медиа-сообщения)
     if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
         doc_id = getattr(message.media.document, 'id', None)
         if doc_id:
             image_url = f"https://t.me/sticker/{doc_id}"
             logger.debug(f"🖼 Image URL (Media Document): {image_url}")
 
-    # Поиск документа в самом объекте подарка (чаще всего здесь)
+    # Поиск документа в gift_info (чаще всего здесь)
     if not image_url and getattr(gift_info, 'document', None):
         doc = gift_info.document
         if getattr(doc, 'id', None):
@@ -122,7 +125,7 @@ def extract_gift_data(action, message) -> dict:
 
     # --- Сбор итоговых данных ---
     gift_data = {
-        # Данные, которые Django может использовать для поиска/создания
+        # Основные поля
         "ton_contract_address": ton_address,
         "name": title,
         "symbol": slug,
@@ -130,27 +133,11 @@ def extract_gift_data(action, message) -> dict:
         "price_ton": price_ton,
         "rarity_level": rarity_level,
         
-        # Визуальные атрибуты (для удобства)
-        "backdrop": attr_data.get("backdrop_name"), 
-        
-        # Данные о редкости и деталях
+        # Атрибуты
+        "backdrop": attr_data.get("backdrop_name"), # Добавлено для удобства, если в Django это отдельное поле
         **attr_data 
     }
-
-    # --- Логирование извлекаемых полей ---
-    logger.info("--- 📊 Извлеченные поля NFT ---")
-    log_data = {k: v for k, v in gift_data.items() if k not in attr_data and v is not None}
     
-    # Добавляем данные отправителя/чата (они приходят в kwargs, а не из action)
-    log_data.update({
-         "telegram_sender_id": message.sender_id,
-         "telegram_chat_id": message.chat_id,
-    })
-    
-    logger.info(json.dumps(log_data, indent=4, ensure_ascii=False))
-    logger.info("--- ----------------------- ---")
-
-
     # Убираем None и пустые значения
     return {k: v for k, v in gift_data.items() if v is not None}
 
@@ -159,8 +146,6 @@ async def send_to_django_backend(gift_data: dict):
     """
     Отправляет извлеченные данные подарка на Django API.
     """
-    # ... (логика отправки без изменений, она выглядит правильно)
-
     if not API_URL:
         logger.error("❌ Переменная API_URL не установлена (проверьте config.py). Пропускаю отправку.")
         return
@@ -170,12 +155,10 @@ async def send_to_django_backend(gift_data: dict):
         'Authorization': f'Token {AUTH_TOKEN}' if AUTH_TOKEN else '',
     }
     
-    # NOTE: Убедитесь, что 'user' и другие поля отправителя/чата добавлены в gift_data 
-    # в handle_star_gift, прежде чем вызывать send_to_django_backend.
-    
     try:
         logger.info("=== 📤 Отправка данных в Django API ===")
         logger.info(f"URL: {API_URL}")
+        # DEBUG: Вывод тела запроса на уровне DEBUG
         logger.debug(f"Тело запроса:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
         
         response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
@@ -187,6 +170,7 @@ async def send_to_django_backend(gift_data: dict):
             logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django!")
             logger.error(f"Ответ сервера:\n{response.text}")
 
+        # Вызовет исключение для статусов 4xx/5xx
         response.raise_for_status()
 
     except requests.exceptions.RequestException as e:
@@ -205,26 +189,30 @@ async def handle_star_gift(message, client, **kwargs):
     sender_id = getattr(message.sender, 'id', None)
     sender_name = utils.get_display_name(message.sender)
     
-    # 💡 Получаем chat_entity только один раз, если нужно (уже не нужно, т.к. message.chat_id достаточно)
+    # Получаем имя чата
     chat_name = utils.get_display_name(await message.get_chat()) if message.chat_id else "Unknown Chat"
 
     logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
 
-    # Передаем только message, так как extract_gift_data использует его напрямую
+    # 1. Извлекаем данные NFT
     gift_data = extract_gift_data(action, message=message)
     
-    # Добавляем данные отправителя/чата, которые нужны для бэкенда (user, sender_id и т.д.)
+    # 2. Добавляем данные отправителя/чата в общий словарь
+    # Это позволяет видеть их в финальном полном логе
     gift_data.update({
         "user": sender_id, # Если ваш Django использует sender_id как ID пользователя
         "telegram_sender_id": sender_id,
         "telegram_sender_name": sender_name,
         "telegram_chat_name": chat_name,
+        # Добавляем ID сообщения для отладки
+        "telegram_message_id": message.id
     })
 
 
-    # Логирование всех данных (включая атрибуты)
+    # 3. Логирование всех данных (включая атрибуты)
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат, полные) ---")
-    print(json.dumps(gift_data, indent=4, ensure_ascii=False))
+    # Используем logger.info для вывода полного JSON в лог-поток
+    logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
     logger.info("--------------------------------------------------")
 
     if gift_data:
