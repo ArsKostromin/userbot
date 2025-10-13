@@ -1,5 +1,4 @@
 import os
-import gzip
 import asyncio
 import logging
 from PIL import Image
@@ -10,7 +9,7 @@ MEDIA_ROOT = "/app/media"
 
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Скачиваем TGS и конвертируем первый кадр в JPEG через lottie.
+    Скачиваем TGS и конвертируем первый кадр в JPEG через python-lottie.
     """
     if not document or not slug:
         logger.warning("⚠️ Нет документа или slug, пропускаем.")
@@ -26,11 +25,12 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.info(f"📁 Скачиваем TGS в {tgs_path}...")
         await client.download_media(document, file=tgs_path)
 
-        # --- Читаем и парсим анимацию ---
+        # --- Загружаем TGS ---
         logger.info("🎨 Загружаем TGS в lottie-анимацию...")
-        animation = importers.tgs_importer.tgs_read(tgs_path)
+        with open(tgs_path, "rb") as f:
+            animation = importers.tgs.load_tgs(f)
 
-        # --- Экспортируем первый кадр ---
+        # --- Рендерим первый кадр ---
         logger.info("🖼️ Рендерим первый кадр...")
         exporters.pillow.export_single_frame(animation, jpeg_path)
 
@@ -39,7 +39,6 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
 
     except Exception as e:
         logger.error(f"❌ Ошибка при конвертации TGS: {e}")
-        # fallback — серый квадрат
         try:
             placeholder = Image.new("RGB", (512, 512), color=(200, 200, 200))
             placeholder.save(jpeg_path, "JPEG")
