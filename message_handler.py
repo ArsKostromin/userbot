@@ -152,3 +152,20 @@ async def handle_star_gift(message, client, **kwargs):
     sender_name = utils.get_display_name(message.sender)
     chat_entity = await client.get_entity(message.chat_id)
     chat_name = utils.get_display_name(chat_entity)
+
+    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
+
+    gift_data = extract_gift_data(
+        action,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        chat_name=chat_name,
+        message=message
+    )
+
+    logger.info("--- 📦 Данные для GiftSerializer (JSON) ---")
+    logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
+    logger.info("-----------------------------------------")
+
+    if gift_data:
+        await send_to_django_backend(gift_data)
