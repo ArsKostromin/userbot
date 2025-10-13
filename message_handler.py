@@ -40,47 +40,52 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
 
 def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, message=None) -> dict:
     """
-    Извлекает все необходимые поля из action для GiftSerializer.
+    Извлекает максимум возможной информации о подарке для GiftSerializer.
     """
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
+        logger.warning("⚠️ GiftInfo не найден в action")
         return {}
 
     attributes = getattr(gift_info, 'attributes', [])
-    model_details = get_attribute_details(attributes, 'Candy Stripe')
-    backdrop_details = get_attribute_details(attributes, 'Aquamarine')
-    pattern_details = get_attribute_details(attributes, 'Stocking')
+    model_details = get_attribute_details(attributes, 'Candy Stripe')  # модель
+    backdrop_details = get_attribute_details(attributes, 'Aquamarine')  # фон
+    pattern_details = get_attribute_details(attributes, 'Stocking')  # узор
 
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
     slug = getattr(gift_info, 'slug', None)
     title = getattr(gift_info, 'title', 'Gift')
 
-    # --- 🖼 Попытка достать реальный image_url ---
+    # 🖼 Изображение
     image_url = None
 
-    # 1️⃣ Попробуем достать из message.media.document
+    # Попробуем разные источники
     if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
-        document = message.media.document
-        file_id = getattr(document, 'id', None)
-        if file_id:
-            image_url = f"https://t.me/sticker/{file_id}"
+        doc_id = getattr(message.media.document, 'id', None)
+        if doc_id:
+            image_url = f"https://t.me/sticker/{doc_id}"
+    elif getattr(gift_info, 'document', None):
+        doc = gift_info.document
+        if getattr(doc, 'id', None):
+            image_url = f"https://t.me/sticker/{doc.id}"
+    elif getattr(gift_info, 'media_url', None):
+        image_url = getattr(gift_info, 'media_url')
+    elif getattr(gift_info, 'thumb_url', None):
+        image_url = getattr(gift_info, 'thumb_url')
 
-    # 2️⃣ Попробуем достать из gift_info (если есть)
-    if not image_url:
-        document = getattr(gift_info, 'document', None)
-        if document and getattr(document, 'id', None):
-            image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
-        elif hasattr(gift_info, 'media_url'):
-            image_url = getattr(gift_info, 'media_url')
-        elif hasattr(gift_info, 'thumb_url'):
-            image_url = getattr(gift_info, 'thumb_url')
-
-    # 3️⃣ Фолбэк (если ни один вариант не сработал)
+    # Fallback
     if not image_url:
         image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
 
-    # --- 🧠 Формируем данные для Django ---
-    data = {
+    # 💎 Редкости
+    rarity_level = getattr(getattr(gift_info, 'rarity_level', None), 'name', None)
+
+    # 💰 Цена
+    value_amount = getattr(gift_info, 'value_amount', None)
+    price_ton = value_amount / 100 if value_amount else None
+
+    # 🧠 Собираем данные под GiftSerializer
+    gift_data = {
         "user": sender_id,
         "telegram_sender_id": sender_id,
         "telegram_sender_name": sender_name,
@@ -90,19 +95,28 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, 
         "name": title,
         "symbol": slug,
         "image_url": image_url,
-        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
+        "price_ton": price_ton,
+        "rarity_level": rarity_level,
 
-        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
-        "backdrop_name": backdrop_details['name'],
-        "model_name": model_details['name'],
-        "pattern_name": pattern_details['name'],
+        # Визуальные
+        "backdrop_name": backdrop_details.get('name'),
+        "model_name": model_details.get('name'),
+        "pattern_name": pattern_details.get('name'),
 
-        "model_rarity_permille": model_details['rarity_permille'],
-        "pattern_rarity_permille": pattern_details['rarity_permille'],
-        "backdrop_rarity_permille": backdrop_details['rarity_permille'],
+        # Редкости (permille)
+        "model_rarity_permille": model_details.get('rarity_permille'),
+        "pattern_rarity_permille": pattern_details.get('rarity_permille'),
+        "backdrop_rarity_permille": backdrop_details.get('rarity_permille'),
+
+        # Original Details
+        "model_original_details": model_details.get('original_details'),
+        "pattern_original_details": pattern_details.get('original_details'),
+        "backdrop_original_details": backdrop_details.get('original_details'),
     }
 
-    return {k: v for k, v in data.items() if v is not None}
+    # Убираем None и пустые значения
+    return {k: v for k, v in gift_data.items() if v is not None}
+
 
 
 async def send_to_django_backend(gift_data: dict):
