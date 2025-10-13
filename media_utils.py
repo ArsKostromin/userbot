@@ -2,14 +2,16 @@ import os
 import asyncio
 import logging
 from PIL import Image
-from lottie import importers, exporters
+from lottie.importers import tgs as tgs_importer
+from lottie.exporters import pillow as pillow_exporter
 
 logger = logging.getLogger(__name__)
 MEDIA_ROOT = "/app/media"
 
+
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Скачиваем TGS и конвертируем первый кадр в JPEG через python-lottie.
+    Скачиваем TGS и конвертируем первый кадр в JPEG через python-lottie (MattBas).
     """
     if not document or not slug:
         logger.warning("⚠️ Нет документа или slug, пропускаем.")
@@ -28,11 +30,11 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         # --- Загружаем TGS ---
         logger.info("🎨 Загружаем TGS в lottie-анимацию...")
         with open(tgs_path, "rb") as f:
-            animation = importers.tgs.load_tgs(f)
+            animation = tgs_importer.load_tgs(f)
 
         # --- Рендерим первый кадр ---
         logger.info("🖼️ Рендерим первый кадр...")
-        exporters.pillow.export_single_frame(animation, jpeg_path)
+        pillow_exporter.export_single_frame(animation, jpeg_path)
 
         logger.info(f"✅ JPEG готов: {jpeg_path}")
         return relative_url
