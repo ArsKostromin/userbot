@@ -6,7 +6,8 @@ import os
 import asyncio
 from telethon import utils
 from PIL import Image
-import rlottie
+from lottie import importers
+from lottie.exporters import exporters
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ MEDIA_ROOT = "/app/media"
 
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
-    Скачивает TGS-стикер, конвертирует его в JPEG.
+    Скачивает TGS-стикер, конвертирует его в GIF, берёт первый кадр и сохраняет как JPEG.
     """
     if not document or not slug:
         return None
@@ -27,37 +28,42 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
     os.makedirs(MEDIA_ROOT, exist_ok=True)
 
     temp_tgs_path = os.path.join(MEDIA_ROOT, f"{slug}.tgs")
+    temp_gif_path = os.path.join(MEDIA_ROOT, f"{slug}.gif")
     final_jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
     relative_url = f"/media/{slug}.jpeg"
 
     try:
-        # 1. Скачиваем TGS файл
+        # 1. Скачиваем TGS
         logger.info(f"📁 Скачивание стикера в {temp_tgs_path}...")
         await client.download_media(document, file=temp_tgs_path)
 
-        # 2. Конвертируем TGS в первый кадр JPEG через rlottie
-        logger.info(f"🔄 Конвертация {temp_tgs_path} в JPEG {final_jpeg_path}...")
         loop = asyncio.get_running_loop()
 
-        def convert_tgs_to_jpeg():
-            with open(temp_tgs_path, "rb") as f:
-                tgs_data = f.read()
-            anim = rlottie.Animation.from_bytes(tgs_data)
-            frame = anim.render(0, anim.width, anim.height)
-            img = Image.fromarray(frame).convert("RGB")
-            img.save(final_jpeg_path, "JPEG")
+        # 2. Конвертируем TGS → GIF
+        def convert_tgs_to_gif():
+            anim = importers.tgs.import_tgs(temp_tgs_path)
+            exporters.gif.export_gif(anim, temp_gif_path)
 
-        await loop.run_in_executor(None, convert_tgs_to_jpeg)
+        await loop.run_in_executor(None, convert_tgs_to_gif)
 
-        logger.info(f"✅ Изображение успешно сконвертировано и сохранено.")
+        # 3. Берём первый кадр GIF и сохраняем в JPEG
+        def gif_to_jpeg():
+            with Image.open(temp_gif_path) as img:
+                img.seek(0)
+                img.convert("RGB").save(final_jpeg_path, "JPEG")
+
+        await loop.run_in_executor(None, gif_to_jpeg)
+
+        logger.info(f"✅ Изображение успешно сконвертировано и сохранено в {final_jpeg_path}")
         return relative_url
 
     except Exception as e:
         logger.error(f"❌ Ошибка при скачивании или конвертации изображения: {e}")
         return None
     finally:
-        if os.path.exists(temp_tgs_path):
-            os.remove(temp_tgs_path)
+        for f in [temp_tgs_path, temp_gif_path]:
+            if os.path.exists(f):
+                os.remove(f)
 
 
 def extract_gift_data(action) -> dict:
