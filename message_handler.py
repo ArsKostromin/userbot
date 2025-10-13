@@ -151,4 +151,4 @@ async def handle_star_gift(message, client, **kwargs):
     sender_id = getattr(message.sender, 'id', None)
     sender_name = utils.get_display_name(message.sender)
     chat_entity = await client.get_entity(message.chat_id)
-    chat_name = utils.get_display_name(chat_entit
+    chat_name = utils.get_display_name(chat_entity)
