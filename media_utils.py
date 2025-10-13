@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 MEDIA_ROOT = "/app/media"
 
-async def download_and_convert_tgs(client, document, slug: str) -> str | None:
+async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
     Скачивает TGS-стикер из Telegram, конвертирует его в GIF через lottie,
     затем берёт первый кадр GIF и сохраняет как JPEG.
