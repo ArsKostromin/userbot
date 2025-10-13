@@ -12,30 +12,49 @@ API_URL = f"{API_BASE_URL}/Inventory/adds-gift/"
 AUTH_TOKEN = config.API_TOKEN
 
 
-def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
+def parse_attributes(attributes):
     """
-    Извлекает имя, permille и оригинальные детали атрибута (модель, фон, узор).
+    Универсальный парсер атрибутов NFT-подарка.
+    Возвращает: backdrop, model, pattern и редкости (permille).
     """
-    attr_data = {
-        'name': None,
-        'rarity_permille': None,
-        'original_details': None
+    result = {
+        "backdrop_name": None,
+        "model_name": None,
+        "pattern_name": None,
+        "backdrop_rarity_permille": None,
+        "model_rarity_permille": None,
+        "pattern_rarity_permille": None,
+        "backdrop_original_details": None,
+        "model_original_details": None,
+        "pattern_original_details": None,
     }
 
-    target_attr = next((attr for attr in gift_info_attributes if getattr(attr, 'name', None) == name), None)
+    for attr in attributes or []:
+        name = getattr(attr, "name", None)
+        rarity = getattr(attr, "rarity_permille", None)
+        orig = getattr(attr, "original_details", None)
+        orig_details = {
+            "id": getattr(orig, "id", None),
+            "type": getattr(orig, "type", None),
+            "name": getattr(orig, "name", None),
+        } if orig else None
 
-    if target_attr:
-        attr_data['name'] = getattr(target_attr, 'name', None)
-        attr_data['rarity_permille'] = getattr(target_attr, 'rarity_permille', None)
+        # Логика классификации атрибутов
+        lname = (name or "").lower()
+        if "backdrop" in lname or "background" in lname or "bg" in lname:
+            result["backdrop_name"] = name
+            result["backdrop_rarity_permille"] = rarity
+            result["backdrop_original_details"] = orig_details
+        elif "model" in lname or "body" in lname or "shape" in lname:
+            result["model_name"] = name
+            result["model_rarity_permille"] = rarity
+            result["model_original_details"] = orig_details
+        elif "pattern" in lname or "texture" in lname or "stripe" in lname or "design" in lname:
+            result["pattern_name"] = name
+            result["pattern_rarity_permille"] = rarity
+            result["pattern_original_details"] = orig_details
 
-        original_details = getattr(target_attr, 'original_details', None)
-        if original_details:
-            attr_data['original_details'] = {
-                'id': getattr(original_details, 'id', None),
-                'type': getattr(original_details, 'type', None),
-                'name': getattr(original_details, 'name', None),
-            }
-    return attr_data
+    return result
 
 
 def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, message=None) -> dict:
@@ -48,9 +67,7 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, 
         return {}
 
     attributes = getattr(gift_info, 'attributes', [])
-    model_details = get_attribute_details(attributes, 'Candy Stripe')  # модель
-    backdrop_details = get_attribute_details(attributes, 'Aquamarine')  # фон
-    pattern_details = get_attribute_details(attributes, 'Stocking')  # узор
+    attr_data = parse_attributes(attributes)
 
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
     slug = getattr(gift_info, 'slug', None)
@@ -58,8 +75,6 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, 
 
     # 🖼 Изображение
     image_url = None
-
-    # Попробуем разные источники
     if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
         doc_id = getattr(message.media.document, 'id', None)
         if doc_id:
@@ -73,18 +88,14 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, 
     elif getattr(gift_info, 'thumb_url', None):
         image_url = getattr(gift_info, 'thumb_url')
 
-    # Fallback
     if not image_url:
         image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
 
-    # 💎 Редкости
     rarity_level = getattr(getattr(gift_info, 'rarity_level', None), 'name', None)
-
-    # 💰 Цена
     value_amount = getattr(gift_info, 'value_amount', None)
     price_ton = value_amount / 100 if value_amount else None
 
-    # 🧠 Собираем данные под GiftSerializer
+    # --- Сбор итоговых данных ---
     gift_data = {
         "user": sender_id,
         "telegram_sender_id": sender_id,
@@ -98,25 +109,11 @@ def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, 
         "price_ton": price_ton,
         "rarity_level": rarity_level,
 
-        # Визуальные
-        "backdrop_name": backdrop_details.get('name'),
-        "model_name": model_details.get('name'),
-        "pattern_name": pattern_details.get('name'),
-
-        # Редкости (permille)
-        "model_rarity_permille": model_details.get('rarity_permille'),
-        "pattern_rarity_permille": pattern_details.get('rarity_permille'),
-        "backdrop_rarity_permille": backdrop_details.get('rarity_permille'),
-
-        # Original Details
-        "model_original_details": model_details.get('original_details'),
-        "pattern_original_details": pattern_details.get('original_details'),
-        "backdrop_original_details": backdrop_details.get('original_details'),
+        **attr_data  # <-- добавляем backdrop_name, model_name, pattern_name и permille
     }
 
     # Убираем None и пустые значения
     return {k: v for k, v in gift_data.items() if v is not None}
-
 
 
 async def send_to_django_backend(gift_data: dict):
@@ -184,4 +181,3 @@ async def handle_star_gift(message, client, **kwargs):
 
     if gift_data:
         await send_to_django_backend(gift_data)
-
