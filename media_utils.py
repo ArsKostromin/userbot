@@ -35,4 +35,9 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         with Image.open(PLACEHOLDER_JPEG) as img:
             img.convert("RGB").save(jpeg_path, "JPEG")
 
-        logger.info(f"✅ JPEG готов (
+        logger.info(f"✅ JPEG готов (заглушка): {jpeg_path}")
+        return relative_url
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при работе с TGS: {e}")
+        return None
