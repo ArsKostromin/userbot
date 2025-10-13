@@ -3,6 +3,7 @@ import json
 import requests
 import config
 from telethon import utils
+from gift_processor import extract_gift_data
 
 logger = logging.getLogger(__name__)
 
@@ -36,73 +37,6 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
                 'name': getattr(original_details, 'name', None),
             }
     return attr_data
-
-
-def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, message=None) -> dict:
-    """
-    Извлекает все необходимые поля из action для GiftSerializer.
-    """
-    gift_info = getattr(action, 'gift', None)
-    if not gift_info:
-        return {}
-
-    attributes = getattr(gift_info, 'attributes', [])
-    model_details = get_attribute_details(attributes, 'Candy Stripe')
-    backdrop_details = get_attribute_details(attributes, 'Aquamarine')
-    pattern_details = get_attribute_details(attributes, 'Stocking')
-
-    ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
-    slug = getattr(gift_info, 'slug', None)
-    title = getattr(gift_info, 'title', 'Gift')
-
-    # --- 🖼 Попытка достать реальный image_url ---
-    image_url = None
-
-    # 1️⃣ Попробуем достать из message.media.document
-    if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
-        document = message.media.document
-        file_id = getattr(document, 'id', None)
-        if file_id:
-            image_url = f"https://t.me/sticker/{file_id}"
-
-    # 2️⃣ Попробуем достать из gift_info (если есть)
-    if not image_url:
-        document = getattr(gift_info, 'document', None)
-        if document and getattr(document, 'id', None):
-            image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
-        elif hasattr(gift_info, 'media_url'):
-            image_url = getattr(gift_info, 'media_url')
-        elif hasattr(gift_info, 'thumb_url'):
-            image_url = getattr(gift_info, 'thumb_url')
-
-    # 3️⃣ Фолбэк (если ни один вариант не сработал)
-    if not image_url:
-        image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
-
-    # --- 🧠 Формируем данные для Django ---
-    data = {
-        "user": sender_id,
-        "telegram_sender_id": sender_id,
-        "telegram_sender_name": sender_name,
-        "telegram_chat_name": chat_name,
-
-        "ton_contract_address": ton_address,
-        "name": title,
-        "symbol": slug,
-        "image_url": image_url,
-        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
-
-        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
-        "backdrop_name": backdrop_details['name'],
-        "model_name": model_details['name'],
-        "pattern_name": pattern_details['name'],
-
-        "model_rarity_permille": model_details['rarity_permille'],
-        "pattern_rarity_permille": pattern_details['rarity_permille'],
-        "backdrop_rarity_permille": backdrop_details['rarity_permille'],
-    }
-
-    return {k: v for k, v in data.items() if v is not None}
 
 
 async def send_to_django_backend(gift_data: dict):
@@ -158,10 +92,7 @@ async def handle_star_gift(message, client, **kwargs):
 
     gift_data = extract_gift_data(
         action,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        chat_name=chat_name,
-        message=message
+        message  # передаём весь message
     )
 
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат) ---")

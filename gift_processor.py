@@ -39,90 +39,70 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
 
 def extract_gift_data(action, message) -> dict:
     """
-    Извлекает все необходимые поля, работая с объектами как с "черными ящиками" (просто извлекая строки/атрибуты).
+    Извлекает все необходимые поля из подарка, включая атрибуты, оригинальные детали,
+    редкость и данные отправителя, используя объект message целиком.
     """
-    # Получаем объект 'gift' из 'action'
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         return {}
 
-    # --- Извлечение деталей атрибутов ---
+    # --- Извлечение атрибутов ---
     attributes = getattr(gift_info, 'attributes', [])
-    
-    # Model (Candy Stripe)
     model_details = get_attribute_details(attributes, 'Candy Stripe')
-    # Backdrop (Aquamarine)
-    backdrop_details = get_attribute_details(attributes, 'Aquamarine')
-    # Pattern (Stocking)
-    pattern_details = get_attribute_details(attributes, 'Stocking')
-            
-    # --- Обработка номера подарка и Slug ---
-    ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
-    gift_number = None
-    
-    slug = getattr(gift_info, 'slug', None)
-    if slug and '-' in slug:
-        number_part = slug.split('-')[-1]
-        if number_part.isdigit():
-            gift_number = '#' + number_part
-        
-    # --- Сборка URL изображения ---
-    image_url = None
-    # Ищем атрибут "Candy Stripe" снова, чтобы получить доступ к 'document'
-    candy_stripe_attr = next((attr for attr in attributes if getattr(attr, 'name', None) == 'Candy Stripe'), None)
-    
-    document = getattr(candy_stripe_attr, 'document', None)
-    if document:
-        # Формируем ссылку на стикер
-        image_url = f"https://t.me/sticker/{getattr(document, 'id', '')}"
-    
-    # --- Информация об отправителе ---
-    sender_info = {}
-    if message and hasattr(message, 'sender_id'):
-        sender_id = getattr(message, 'sender_id', None)
-        if sender_id:
-            sender_info = {
-                "sender_id": sender_id,
-                "sender_username": None,  # Будет заполнено позже
-                "sender_first_name": None,
-                "sender_last_name": None
-            }
+    backdrop_details = get_attribute_details(attributes, 'Azure Blue')  # Пример из твоего лога
+    pattern_details = get_attribute_details(attributes, 'Spades')      # Пример из твоего лога
 
-    # --- Сборка финального словаря ---
+    # --- TON адрес и slug ---
+    ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
+    slug = getattr(gift_info, 'slug', None)
+
+    # --- Формирование URL изображения ---
+    image_url = None
+    # Пробуем взять изображение из любого атрибута, если есть document
+    for attr in attributes:
+        document = getattr(attr, 'document', None)
+        if document and getattr(document, 'id', None):
+            image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
+            break
+    # fallback
+    if not image_url:
+        image_url = getattr(gift_info, 'media_url', None) or getattr(gift_info, 'thumb_url', None) or "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
+
+    # --- Данные отправителя ---
+    sender_id = getattr(message, 'sender_id', None)
+    sender_name = getattr(message.sender, 'first_name', None) if hasattr(message, 'sender') else None
+
+    # --- Формируем итоговый словарь ---
     data = {
-        "ton_contract_address": ton_address, 
-        # name: Добавляем номер подарка в название, если он найден
-        "name": f"{getattr(gift_info, 'title', 'Gift')} {gift_number}" if gift_number else getattr(gift_info, 'title', 'Gift'),
-        "image_url": image_url,
-        # value_amount - это сумма в минимальных единицах валюты.
-        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None, 
-        "backdrop": backdrop_details['name'],
+        "id": getattr(gift_info, 'id', None),
+        "user": sender_id,
+        "telegram_sender_id": sender_id,
+        "telegram_sender_name": sender_name,
+        "telegram_chat_name": getattr(message.chat, 'title', None) if hasattr(message, 'chat') else None,
+
+        "ton_contract_address": ton_address,
+        "name": getattr(gift_info, 'title', 'Gift'),
         "symbol": slug,
-        
-        # НОВЫЕ ПОЛЯ РЕДКОСТИ И ДЕТАЛИ:
+        "image_url": image_url,
+        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
+
+        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
+
         "model_name": model_details['name'],
         "model_rarity_permille": model_details['rarity_permille'],
         "model_original_details": model_details['original_details'],
-        
+
         "pattern_name": pattern_details['name'],
         "pattern_rarity_permille": pattern_details['rarity_permille'],
         "pattern_original_details": pattern_details['original_details'],
-        
+
         "backdrop_name": backdrop_details['name'],
         "backdrop_rarity_permille": backdrop_details['rarity_permille'],
         "backdrop_original_details": backdrop_details['original_details'],
-
-        # Общая редкость подарка
-        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
-        
-        # Информация об отправителе
-        "sender_info": sender_info
     }
-    
-    # Очищаем данные, удаляя None-значения для чистоты вывода, кроме основных полей
-    data = {k: v for k, v in data.items() if v is not None} 
-    
-    return data
+
+    # Убираем None значения
+    return {k: v for k, v in data.items() if v is not None}
 
 
 async def get_sender_info(client, sender_id):
