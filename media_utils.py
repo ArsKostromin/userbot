@@ -5,7 +5,7 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 MEDIA_ROOT = "/app/media"
-PLACEHOLDER_JPEG = "/app/media/placeholder.jpeg"  # заранее положи любой JPEG
+PLACEHOLDER_JPEG = os.path.join(MEDIA_ROOT, "placeholder.jpeg")  # путь к placeholder
 
 async def download_and_convert_image(client, document, slug: str) -> str | None:
     """
@@ -25,13 +25,14 @@ async def download_and_convert_image(client, document, slug: str) -> str | None:
         logger.info(f"📁 Скачиваем TGS в {MEDIA_ROOT}/{slug}.tgs (но не конвертируем)...")
         await client.download_media(document, file=os.path.join(MEDIA_ROOT, f"{slug}.tgs"))
 
-        # --- Копируем заглушку вместо реальной картинки ---
+        # --- Создаём placeholder, если его нет ---
+        if not os.path.exists(PLACEHOLDER_JPEG):
+            logger.info("🖼️ Placeholder не найден, создаём серый квадрат 512x512...")
+            img = Image.new("RGB", (512, 512), color=(200, 200, 200))
+            img.save(PLACEHOLDER_JPEG, "JPEG")
+
+        # --- Копируем placeholder в итоговый JPEG ---
         with Image.open(PLACEHOLDER_JPEG) as img:
             img.convert("RGB").save(jpeg_path, "JPEG")
 
-        logger.info(f"✅ JPEG готов (заглушка): {jpeg_path}")
-        return relative_url
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при работе с TGS: {e}")
-        return None
+        logger.info(f"✅ JPEG готов (
