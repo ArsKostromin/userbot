@@ -2,11 +2,11 @@ import logging
 import json
 import requests
 import config
+from telethon import utils
 
 logger = logging.getLogger(__name__)
 
 # --- КОНФИГУРАЦИЯ БЭКЕНДА ---
-# Установите эти переменные окружения!
 API_BASE_URL = config.API_BASE_URL
 API_URL = f"{API_BASE_URL}/Inventory/adds-gift/"
 AUTH_TOKEN = config.API_TOKEN
@@ -22,7 +22,6 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
         'original_details': None
     }
     
-    # Ищем атрибут в списке
     target_attr = next((attr for attr in gift_info_attributes if getattr(attr, 'name', None) == name), None)
     
     if target_attr:
@@ -38,7 +37,8 @@ def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
             }
     return attr_data
 
-def extract_gift_data(action) -> dict:
+
+def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None) -> dict:
     """
     Извлекает все необходимые поля из action для GiftSerializer.
     """
@@ -50,50 +50,49 @@ def extract_gift_data(action) -> dict:
     model_details = get_attribute_details(attributes, 'Candy Stripe')
     backdrop_details = get_attribute_details(attributes, 'Aquamarine')
     pattern_details = get_attribute_details(attributes, 'Stocking')
-            
+
     ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
-    gift_number = None
     slug = getattr(gift_info, 'slug', None)
-    
-    if slug and '-' in slug:
-        number_part = slug.split('-')[-1]
-        if number_part.isdigit():
-            gift_number = '#' + number_part
-        
+    title = getattr(gift_info, 'title', 'Gift')
+
+    # --- 🖼 Попытка достать реальный image_url ---
     image_url = None
-    candy_stripe_attr = next((attr for attr in attributes if getattr(attr, 'name', None) == 'Candy Stripe'), None)
-    document = getattr(candy_stripe_attr, 'document', None)
-    if document:
-        image_url = f"https://t.me/sticker/{getattr(document, 'id', '')}"
-    
-    # --- Формируем данные для Django GiftSerializer ---
+    document = getattr(gift_info, 'document', None)
+    if document and getattr(document, 'id', None):
+        image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
+    elif hasattr(gift_info, 'media_url'):
+        image_url = getattr(gift_info, 'media_url')
+    elif hasattr(gift_info, 'thumb_url'):
+        image_url = getattr(gift_info, 'thumb_url')
+
+    # --- 🧠 Формируем данные для Django ---
     data = {
-        "ton_contract_address": ton_address, 
-        "name": f"{getattr(gift_info, 'title', 'Gift')} {gift_number}" if gift_number else getattr(gift_info, 'title', 'Gift'),
+        "user": sender_id,  # можно заменить на sender_name, если нужно имя
+        "telegram_sender_id": sender_id,
+        "telegram_sender_name": sender_name,
+        "telegram_chat_name": chat_name,
+
+        "ton_contract_address": ton_address,
+        "name": title,
+        "symbol": slug,
         "image_url": image_url,
-        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None, 
-        
-        # Визуальные компоненты
+        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
+
+        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
         "backdrop_name": backdrop_details['name'],
         "model_name": model_details['name'],
         "pattern_name": pattern_details['name'],
-        "symbol": slug, 
-        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
 
-        # Детали редкости
         "model_rarity_permille": model_details['rarity_permille'],
-        "model_original_details": model_details['original_details'],
         "pattern_rarity_permille": pattern_details['rarity_permille'],
-        "pattern_original_details": pattern_details['original_details'],
         "backdrop_rarity_permille": backdrop_details['rarity_permille'],
-        "backdrop_original_details": backdrop_details['original_details'],
     }
-    
-    # Очищаем словарь от None для чистоты JSON
+
+    # Убираем None и пустые значения
     return {k: v for k, v in data.items() if v is not None}
 
 
-async def send_to_django_backend(gift_data: dict, sender_id: int):
+async def send_to_django_backend(gift_data: dict):
     """
     Отправляет извлеченные данные подарка на Django API.
     """
@@ -103,27 +102,19 @@ async def send_to_django_backend(gift_data: dict, sender_id: int):
 
     headers = {
         'Content-Type': 'application/json',
-        # Добавьте токен, если используете аутентификацию
         'Authorization': f'Token {AUTH_TOKEN}' if AUTH_TOKEN else '',
     }
-    
-    # Добавляем ID отправителя, который может понадобиться для связи с пользователем
-    gift_data['telegram_sender_id'] = sender_id 
-
 
     try:
-        # 💬 Логируем тело запроса
         logger.info("=== 📤 Отправка данных в Django API ===")
         logger.info(f"URL: {API_URL}")
         logger.info(f"Заголовки: {headers}")
         logger.info(f"Тело запроса:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
         logger.info("=======================================")
 
-        # Сам запрос
         response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
 
-        # Проверяем ответ
-        if response.status_code >= 200 and response.status_code < 300:
+        if 200 <= response.status_code < 300:
             logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
             logger.debug(f"Ответ Django:\n{response.text}")
         else:
@@ -146,21 +137,19 @@ async def handle_star_gift(message, client, **kwargs):
         return
 
     sender_id = getattr(message.sender, 'id', None)
+    sender_name = utils.get_display_name(message.sender)
+    chat_entity = await client.get_entity(message.chat_id)
+    chat_name = utils.get_display_name(chat_entity)
 
-    # 1. Извлекаем данные
-    gift_data = extract_gift_data(action)
-    
-    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от пользователя ID: {sender_id}!")
-    
-    # 2. Логируем данные
+    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
+
+    gift_data = extract_gift_data(action, sender_id=sender_id, sender_name=sender_name, chat_name=chat_name)
+
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат) ---")
     print(json.dumps(gift_data, indent=4, ensure_ascii=False))
     logger.info("--------------------------------------------------")
-    
-    # 3. Отправляем на бэкенд
+
     if gift_data:
-        await send_to_django_backend(gift_data, sender_id)
-        
-    # ВНИМАНИЕ: Если вы хотите, чтобы это сообщение было отмечено как прочитанное 
-    # только после успешной обработки, здесь можно добавить логику.
-    # Для целей истории, лучше читать их по умолчанию.
+        await send_to_django_backend(gift_data)
+
+    # Тут можно добавить отметку сообщения как прочитанного после успешной обработки
