@@ -1,168 +1,114 @@
 import logging
 import json
 import requests
-import config
 from telethon import utils
+from telethon.tl.types import MessageActionStarGiftUnique
 
 logger = logging.getLogger(__name__)
 
-# --- КОНФИГУРАЦИЯ БЭКЕНДА ---
-API_BASE_URL = config.API_BASE_URL
+API_BASE_URL = "https://example.com/api"  # твой config.API_BASE_URL
 API_URL = f"{API_BASE_URL}/Inventory/adds-gift/"
-AUTH_TOKEN = config.API_TOKEN
+AUTH_TOKEN = "YOUR_TOKEN_HERE"  # config.API_TOKEN
 
 
-def get_attribute_details(gift_info_attributes: list, name: str) -> dict:
+def parse_attribute(attr):
     """
-    Извлекает имя, permille и оригинальные детали атрибута (модель, фон, узор).
+    Рекурсивный парсер StarGift атрибута
     """
-    attr_data = {
-        'name': None,
-        'rarity_permille': None,
-        'original_details': None
-    }
-
-    target_attr = next((attr for attr in gift_info_attributes if getattr(attr, 'name', None) == name), None)
-
-    if target_attr:
-        attr_data['name'] = getattr(target_attr, 'name', None)
-        attr_data['rarity_permille'] = getattr(target_attr, 'rarity_permille', None)
-
-        original_details = getattr(target_attr, 'original_details', None)
-        if original_details:
-            attr_data['original_details'] = {
-                'id': getattr(original_details, 'id', None),
-                'type': getattr(original_details, 'type', None),
-                'name': getattr(original_details, 'name', None),
-            }
-    return attr_data
-
-
-def extract_gift_data(action, sender_id=None, sender_name=None, chat_name=None, message=None) -> dict:
-    """
-    Извлекает все необходимые поля из action для GiftSerializer.
-    """
-    gift_info = getattr(action, 'gift', None)
-    if not gift_info:
+    if not attr:
         return {}
 
-    attributes = getattr(gift_info, 'attributes', [])
-    model_details = get_attribute_details(attributes, 'Candy Stripe')
-    backdrop_details = get_attribute_details(attributes, 'Aquamarine')
-    pattern_details = get_attribute_details(attributes, 'Stocking')
-
-    ton_address = getattr(gift_info, 'slug', None) or str(getattr(gift_info, 'id', ''))
-    slug = getattr(gift_info, 'slug', None)
-    title = getattr(gift_info, 'title', 'Gift')
-
-    # --- 🖼 Попытка достать реальный image_url ---
-    image_url = None
-
-    # 1️⃣ Попробуем достать из message.media.document
-    if message and getattr(message, 'media', None) and getattr(message.media, 'document', None):
-        document = message.media.document
-        file_id = getattr(document, 'id', None)
-        if file_id:
-            image_url = f"https://t.me/sticker/{file_id}"
-
-    # 2️⃣ Попробуем достать из gift_info (если есть)
-    if not image_url:
-        document = getattr(gift_info, 'document', None)
-        if document and getattr(document, 'id', None):
-            image_url = f"https://t.me/sticker/{getattr(document, 'id')}"
-        elif hasattr(gift_info, 'media_url'):
-            image_url = getattr(gift_info, 'media_url')
-        elif hasattr(gift_info, 'thumb_url'):
-            image_url = getattr(gift_info, 'thumb_url')
-
-    # 3️⃣ Фолбэк (если ни один вариант не сработал)
-    if not image_url:
-        image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
-
-    # --- 🧠 Формируем данные для Django ---
     data = {
+        "type": type(attr).__name__,
+        "name": getattr(attr, "name", None),
+        "rarity_permille": getattr(attr, "rarity_permille", None),
+    }
+
+    # Документ (если есть)
+    document = getattr(attr, "document", None)
+    if document:
+        data["document"] = {
+            "id": getattr(document, "id", None),
+            "file_name": getattr(document, "file_name", None),
+            "mime_type": getattr(document, "mime_type", None),
+            "size": getattr(document, "size", None),
+            "width": getattr(document, "attributes", [None])[0].w if getattr(document, "attributes", None) else None,
+            "height": getattr(document, "attributes", [None])[0].h if getattr(document, "attributes", None) else None,
+            "emoji": getattr(document.attributes[1], "alt", None) if len(document.attributes) > 1 else None,
+            "stickerset_id": getattr(getattr(document.attributes[1], "stickerset", None), "id", None)
+            if len(document.attributes) > 1 else None,
+        }
+
+    # Оригинальные детали (для StarGiftAttributeOriginalDetails)
+    original = getattr(attr, "original_details", None)
+    if original:
+        data["original_details"] = {
+            "recipient_id": getattr(original, "recipient_id", None).user_id
+            if getattr(original, "recipient_id", None) else None,
+            "sender_id": getattr(original, "sender_id", None).user_id
+            if getattr(original, "sender_id", None) else None,
+            "date": getattr(original, "date", None),
+            "message": getattr(getattr(original, "message", None), "text", None)
+        }
+
+    return data
+
+
+def extract_gift_data(action: MessageActionStarGiftUnique, sender_id=None, sender_name=None, chat_name=None, message=None):
+    """
+    Полный парсер StarGift с извлечением всех атрибутов и документов
+    """
+    gift = getattr(action, "gift", None)
+    if not gift:
+        return {}
+
+    # Основные поля
+    gift_data = {
+        "gift_id": getattr(gift, "gift_id", None),
+        "title": getattr(gift, "title", None),
+        "slug": getattr(gift, "slug", None),
+        "num": getattr(gift, "num", None),
+        "rarity_permille": getattr(gift, "rarity_permille", None),
+        "attributes": [],
         "user": sender_id,
         "telegram_sender_id": sender_id,
         "telegram_sender_name": sender_name,
         "telegram_chat_name": chat_name,
-
-        "ton_contract_address": ton_address,
-        "name": title,
-        "symbol": slug,
-        "image_url": image_url,
-        "price_ton": getattr(gift_info, 'value_amount', None) / 100 if getattr(gift_info, 'value_amount', None) else None,
-
-        "rarity_level": getattr(getattr(gift_info, 'rarity_level', None), 'name', None),
-        "backdrop_name": backdrop_details['name'],
-        "model_name": model_details['name'],
-        "pattern_name": pattern_details['name'],
-
-        "model_rarity_permille": model_details['rarity_permille'],
-        "pattern_rarity_permille": pattern_details['rarity_permille'],
-        "backdrop_rarity_permille": backdrop_details['rarity_permille'],
     }
 
-    return {k: v for k, v in data.items() if v is not None}
+    # Все атрибуты
+    for attr in getattr(gift, "attributes", []):
+        gift_data["attributes"].append(parse_attribute(attr))
 
+    # Попытка достать image_url
+    image_url = None
+    if message and getattr(message, "media", None) and getattr(message.media, "document", None):
+        doc = message.media.document
+        if getattr(doc, "id", None):
+            image_url = f"https://t.me/sticker/{doc.id}"
+    elif hasattr(gift, "document") and getattr(gift.document, "id", None):
+        image_url = f"https://t.me/sticker/{gift.document.id}"
+    else:
+        image_url = "https://cdn-icons-png.flaticon.com/512/3989/3989685.png"
 
-async def send_to_django_backend(gift_data: dict):
-    """
-    Отправляет извлеченные данные подарка на Django API.
-    """
-    if not API_URL:
-        logger.error("❌ Переменная DJANGO_GIFT_WEBHOOK_URL не установлена. Пропускаю отправку.")
-        return
+    gift_data["image_url"] = image_url
 
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Token {AUTH_TOKEN}' if AUTH_TOKEN else '',
-    }
-
-    try:
-        logger.info("=== 📤 Отправка данных в Django API ===")
-        logger.info(f"URL: {API_URL}")
-        logger.info(f"Заголовки: {headers}")
-        logger.info(f"Тело запроса:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
-        logger.info("=======================================")
-
-        response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
-
-        if 200 <= response.status_code < 300:
-            logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
-            logger.debug(f"Ответ Django:\n{response.text}")
-        else:
-            logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django!")
-            logger.error(f"Ответ сервера:\n{response.text}")
-
-        response.raise_for_status()
-
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ Ошибка при POST {API_URL}: {e}")
-        logger.debug(f"Неотправленные данные:\n{json.dumps(gift_data, indent=4, ensure_ascii=False)}")
+    return gift_data
 
 
 async def handle_star_gift(message, client, **kwargs):
-    """
-    Основной обработчик для MessageActionStarGiftUnique.
-    """
-    action = getattr(message, 'action', None)
-    if not action or type(action).__name__ != 'MessageActionStarGiftUnique':
+    action = getattr(message, "action", None)
+    if not action or type(action).__name__ != "MessageActionStarGiftUnique":
         return
 
-    sender_id = getattr(message.sender, 'id', None)
+    sender_id = getattr(message.sender, "id", None)
     sender_name = utils.get_display_name(message.sender)
     chat_entity = await client.get_entity(message.chat_id)
     chat_name = utils.get_display_name(chat_entity)
 
     logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
 
-    gift_data = extract_gift_data(
-        action,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        chat_name=chat_name,
-        message=message
-    )
+    gift_data = extract_gift_data(action, sender_id, sender_name, chat_name, message)
 
     logger.info("--- 📦 Данные для GiftSerializer (JSON-формат) ---")
     print(json.dumps(gift_data, indent=4, ensure_ascii=False))
@@ -170,3 +116,16 @@ async def handle_star_gift(message, client, **kwargs):
 
     if gift_data:
         await send_to_django_backend(gift_data)
+
+
+async def send_to_django_backend(gift_data: dict):
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Token {AUTH_TOKEN}" if AUTH_TOKEN else "",
+    }
+    try:
+        response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
+        response.raise_for_status()
+        logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ Ошибка при POST {API_URL}: {e}")
