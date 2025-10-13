@@ -163,3 +163,4 @@ async def handle_star_gift(message, client, **kwargs):
 
     if gift_data:
         await send_to_django_backend(gift_data)
+        
