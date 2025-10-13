@@ -2,71 +2,21 @@ import logging
 import json
 import requests
 import config
-import os
-import asyncio
 from telethon import utils
-from PIL import Image
-from lottie import importers
-from lottie.exporters import exporters
+from media_utils import download_and_convert_image  # импортируем утилиты для работы с медиа
 
 logger = logging.getLogger(__name__)
 
-# --- КОНФИГУРАЦИЯ БЭКЕНДА И ПУТЕЙ ---
+# --- КОНФИГУРАЦИЯ БЭКЕНДА ---
 API_BASE_URL = getattr(config, 'API_BASE_URL', None)
 API_URL = f"{API_BASE_URL}/Inventory/adds-gift/" if API_BASE_URL else None
 AUTH_TOKEN = getattr(config, 'API_TOKEN', None)
-MEDIA_ROOT = "/app/media"
-
-
-async def download_and_convert_image(client, document, slug: str) -> str | None:
-    """
-    Скачивает TGS-стикер, конвертирует его в GIF, берёт первый кадр и сохраняет как JPEG.
-    """
-    if not document or not slug:
-        return None
-
-    os.makedirs(MEDIA_ROOT, exist_ok=True)
-
-    temp_tgs_path = os.path.join(MEDIA_ROOT, f"{slug}.tgs")
-    temp_gif_path = os.path.join(MEDIA_ROOT, f"{slug}.gif")
-    final_jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
-    relative_url = f"/media/{slug}.jpeg"
-
-    try:
-        # 1. Скачиваем TGS
-        logger.info(f"📁 Скачивание стикера в {temp_tgs_path}...")
-        await client.download_media(document, file=temp_tgs_path)
-
-        loop = asyncio.get_running_loop()
-
-        # 2. Конвертируем TGS → GIF
-        def convert_tgs_to_gif():
-            anim = importers.tgs.import_tgs(temp_tgs_path)
-            exporters.gif.export_gif(anim, temp_gif_path)
-
-        await loop.run_in_executor(None, convert_tgs_to_gif)
-
-        # 3. Берём первый кадр GIF и сохраняем в JPEG
-        def gif_to_jpeg():
-            with Image.open(temp_gif_path) as img:
-                img.seek(0)
-                img.convert("RGB").save(final_jpeg_path, "JPEG")
-
-        await loop.run_in_executor(None, gif_to_jpeg)
-
-        logger.info(f"✅ Изображение успешно сконвертировано и сохранено в {final_jpeg_path}")
-        return relative_url
-
-    except Exception as e:
-        logger.error(f"❌ Ошибка при скачивании или конвертации изображения: {e}")
-        return None
-    finally:
-        for f in [temp_tgs_path, temp_gif_path]:
-            if os.path.exists(f):
-                return
 
 
 def extract_gift_data(action) -> dict:
+    """
+    Извлекает данные из объекта StarGift.
+    """
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         logger.warning("⚠️ Объект 'gift' не найден в action, обработка невозможна.")
@@ -126,6 +76,9 @@ def extract_gift_data(action) -> dict:
 
 
 async def send_to_django_backend(gift_data: dict):
+    """
+    Отправляет данные о подарке в Django API.
+    """
     if not API_URL:
         logger.error("❌ Переменная API_URL не установлена. Пропускаю отправку.")
         return
@@ -151,6 +104,10 @@ async def send_to_django_backend(gift_data: dict):
 
 
 async def handle_star_gift(message, client, **kwargs):
+    """
+    Основной обработчик сообщений Telegram: ищет StarGift,
+    скачивает изображение, конвертирует его и отправляет данные в Django.
+    """
     action = getattr(message, 'action', None)
     if not action or type(action).__name__ != 'MessageActionStarGiftUnique': 
         return
@@ -171,6 +128,7 @@ async def handle_star_gift(message, client, **kwargs):
         slug = gift_data.get('symbol')
         
         if document and slug:
+            # Используем отдельный модуль для работы с изображениями
             image_url = await download_and_convert_image(client, document, slug)
     
     gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
