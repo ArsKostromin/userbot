@@ -3,7 +3,8 @@ import json
 import requests
 import config
 from telethon import utils
-from media_utils import download_and_convert_image  # импортируем утилиты для работы с медиа
+# 💡 ИСПРАВЛЕНИЕ: Импортируем новую простую функцию
+from media_utils import download_thumbnail_image
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,7 @@ AUTH_TOKEN = getattr(config, 'API_TOKEN', None)
 
 
 def extract_gift_data(action) -> dict:
-    """
-    Извлекает данные из объекта StarGift.
-    """
+    # ... (Эта функция остается без изменений, она работает правильно) ...
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         logger.warning("⚠️ Объект 'gift' не найден в action, обработка невозможна.")
@@ -31,14 +30,17 @@ def extract_gift_data(action) -> dict:
     def get_details(attr_obj):
         if not attr_obj:
             return None, None, None
+        
         name = getattr(attr_obj, 'name', None)
         rarity = getattr(attr_obj, 'rarity_permille', None)
         orig = getattr(attr_obj, 'original_details', None)
+        
         orig_details = {
             "id": getattr(orig, "id", None),
             "type": getattr(orig, "type", None),
             "name": getattr(orig, "name", None),
         } if orig else None
+        
         return name, rarity, orig_details
 
     model_name, model_rarity, model_orig = get_details(model_attr)
@@ -76,9 +78,7 @@ def extract_gift_data(action) -> dict:
 
 
 async def send_to_django_backend(gift_data: dict):
-    """
-    Отправляет данные о подарке в Django API.
-    """
+    # ... (Эта функция остается без изменений) ...
     if not API_URL:
         logger.error("❌ Переменная API_URL не установлена. Пропускаю отправку.")
         return
@@ -104,12 +104,8 @@ async def send_to_django_backend(gift_data: dict):
 
 
 async def handle_star_gift(message, client, **kwargs):
-    """
-    Основной обработчик сообщений Telegram: ищет StarGift,
-    скачивает изображение, конвертирует его и отправляет данные в Django.
-    """
     action = getattr(message, 'action', None)
-    if not action or type(action).__name__ != 'MessageActionStarGiftUnique': 
+    if not action or type(action).__name__ != 'MessageActionStarGiftUnique':
         return
 
     sender_id = getattr(message.sender, 'id', None)
@@ -120,6 +116,7 @@ async def handle_star_gift(message, client, **kwargs):
 
     gift_data = extract_gift_data(action)
     
+    # 💡 ИЗМЕНЕНИЕ: Скачиваем thumbnail вместо конвертации
     gift_info = getattr(action, 'gift', None)
     image_url = None
     if gift_info:
@@ -128,12 +125,13 @@ async def handle_star_gift(message, client, **kwargs):
         slug = gift_data.get('symbol')
         
         if document and slug:
-            # Используем отдельный модуль для работы с изображениями
-            image_url = await download_and_convert_image(client, document, slug)
+            # Вызываем новую, простую функцию
+            image_url = await download_thumbnail_image(client, document, slug)
     
+    # Обновляем URL или используем заглушку
     gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
     if not image_url:
-        logger.warning("⚠️ Не удалось создать локальное изображение. Используется заглушка.")
+        logger.warning("⚠️ Не удалось скачать thumbnail. Используется заглушка.")
 
     gift_data.update({"user": sender_id})
 
