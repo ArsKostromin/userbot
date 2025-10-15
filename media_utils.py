@@ -1,55 +1,50 @@
 import os
 import logging
-from PIL import Image
+from telethon.tl.types import Document, PhotoSize
 
 logger = logging.getLogger(__name__)
 MEDIA_ROOT = "/app/media"
 
-# 🔗 Укажи домен, на котором крутится backend
-BASE_URL = "https://teststudiaorbita.ru"
-
-
-async def download_thumbnail_image(client, document, slug: str) -> str | None:
+async def download_thumbnail_image(client, document: Document, slug: str) -> str | None:
     """
     Скачивает thumbnail (превью) стикера напрямую в формате JPEG.
-    Возвращает абсолютный URL (например: https://teststudiaorbita.ru/media/slug.jpeg)
+    Просто скачивает и пишет всё в логи, без заглушек и приколов.
     """
-    if not document or not slug:
-        logger.warning("⚠️ Нет документа или slug, пропускаем скачивание.")
-        return None
-
     os.makedirs(MEDIA_ROOT, exist_ok=True)
     jpeg_path = os.path.join(MEDIA_ROOT, f"{slug}.jpeg")
-    image_url = f"{BASE_URL}/media/{slug}.jpeg"  # ✅ абсолютный URL для Django API
+    relative_url = f"/media/{slug}.jpeg"
 
     try:
-        # 1. Проверяем, есть ли превью у документа
+        if not document:
+            logger.warning("⚠️ Нет документа — нечего скачивать.")
+            return None
+
+        # 1. Проверяем, есть ли превью
         thumbs = getattr(document, "thumbs", None)
         if not thumbs:
-            raise ValueError("У документа нет превью (thumbs).")
+            logger.warning("❌ У документа нет превью (thumbs).")
+            return None
 
-        # 2. Берём лучший (последний) thumbnail
+        # 2. Выбираем лучшее превью
         best_thumb = thumbs[-1]
-        logger.info(f"📁 Скачиваем превью стикера в {jpeg_path}...")
+        if not isinstance(best_thumb, PhotoSize):
+            logger.warning("❌ Неизвестный тип превью.")
+            return None
 
-        # 3. Скачиваем превью через Telethon
+        # 3. Качаем
+        logger.info(f"📥 Скачиваю thumbnail в {jpeg_path} ...")
         await client.download_media(best_thumb, file=jpeg_path)
 
-        # 4. Проверим, что файл реально создался
+        # 4. Проверяем, что файл реально появился
         if not os.path.exists(jpeg_path):
-            raise FileNotFoundError("Файл превью не был создан после скачивания.")
+            logger.error("❌ Файл превью не был создан после скачивания.")
+            return None
 
+        # 5. Пишем успех
         logger.info(f"✅ Превью успешно скачано: {jpeg_path}")
-        return image_url
+        logger.info(f"🌐 URL: {relative_url}")
+        return relative_url
 
     except Exception as e:
-        logger.error(f"❌ Ошибка при скачивании thumbnail: {e}")
-        try:
-            # 5. Создаём серую заглушку, если превью не получилось скачать
-            placeholder = Image.new("RGB", (512, 512), color=(200, 200, 200))
-            placeholder.save(jpeg_path, "JPEG")
-            logger.warning("⚠️ Используем заглушку.")
-            return image_url
-        except Exception as e2:
-            logger.error(f"💀 Ошибка при создании заглушки: {e2}")
-            return None
+        logger.error(f"💀 Ошибка при скачивании превью: {e}")
+        return None
