@@ -27,6 +27,9 @@ def create_client():
         raise
 
 
+def get_client():
+    return _client_instance
+
 async def initialize_client(client):
     """
     Инициализирует клиент и проверяет авторизацию

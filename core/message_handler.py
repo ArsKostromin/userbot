@@ -3,7 +3,6 @@ import json
 import requests
 import config
 from telethon import utils
-# 💡 ИСПРАВЛЕНИЕ: Импортируем новую простую функцию
 from .media_utils import download_thumbnail_image
 
 logger = logging.getLogger(__name__)
@@ -15,7 +14,6 @@ AUTH_TOKEN = getattr(config, 'API_TOKEN', None)
 
 
 def extract_gift_data(action) -> dict:
-    # ... (Эта функция остается без изменений, она работает правильно) ...
     gift_info = getattr(action, 'gift', None)
     if not gift_info:
         logger.warning("⚠️ Объект 'gift' не найден в action, обработка невозможна.")
@@ -23,9 +21,9 @@ def extract_gift_data(action) -> dict:
 
     attributes = getattr(gift_info, 'attributes', [])
     
-    model_attr = next((attr for attr in attributes if type(attr).__name__ == 'StarGiftAttributeModel'), None)
-    pattern_attr = next((attr for attr in attributes if type(attr).__name__ == 'StarGiftAttributePattern'), None)
-    backdrop_attr = next((attr for attr in attributes if type(attr).__name__ == 'StarGiftAttributeBackdrop'), None)
+    model_attr = next((a for a in attributes if type(a).__name__ == 'StarGiftAttributeModel'), None)
+    pattern_attr = next((a for a in attributes if type(a).__name__ == 'StarGiftAttributePattern'), None)
+    backdrop_attr = next((a for a in attributes if type(a).__name__ == 'StarGiftAttributeBackdrop'), None)
 
     def get_details(attr_obj):
         if not attr_obj:
@@ -34,7 +32,6 @@ def extract_gift_data(action) -> dict:
         name = getattr(attr_obj, 'name', None)
         rarity = getattr(attr_obj, 'rarity_permille', None)
         orig = getattr(attr_obj, 'original_details', None)
-        
         orig_details = {
             "id": getattr(orig, "id", None),
             "type": getattr(orig, "type", None),
@@ -71,16 +68,14 @@ def extract_gift_data(action) -> dict:
         "pattern_original_details": pattern_orig,
         "backdrop_original_details": backdrop_orig,
         "rarity_level": rarity_level,
-        "backdrop_name": backdrop_name,
     }
 
     return {k: v for k, v in gift_data.items() if v is not None}
 
 
 async def send_to_django_backend(gift_data: dict):
-    # ... (Эта функция остается без изменений) ...
     if not API_URL:
-        logger.error("❌ Переменная API_URL не установлена. Пропускаю отправку.")
+        logger.error("❌ API_URL не установлен. Пропускаю отправку.")
         return
 
     headers = {
@@ -90,14 +85,13 @@ async def send_to_django_backend(gift_data: dict):
     
     try:
         logger.info("=== 📤 Отправка данных в Django API ===")
+        logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
         response = requests.post(API_URL, json=gift_data, headers=headers, timeout=10)
 
         if 200 <= response.status_code < 300:
             logger.info(f"🎉 Успешно отправлено! Код ответа: {response.status_code}")
         else:
-            logger.error(f"⚠️ Ошибка {response.status_code} при отправке данных в Django! Ответ: {response.text}")
-
-        response.raise_for_status()
+            logger.error(f"⚠️ Ошибка {response.status_code} при POST в Django: {response.text}")
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Ошибка при POST {API_URL}: {e}")
@@ -110,34 +104,38 @@ async def handle_star_gift(message, client, **kwargs):
 
     sender_id = getattr(message.sender, 'id', None)
     sender_name = utils.get_display_name(message.sender)
-    chat_name = utils.get_display_name(await message.get_chat()) if message.chat_id else "Unknown Chat"
+    chat = await message.get_chat()
+    chat_name = utils.get_display_name(chat)
 
-    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в чате '{chat_name}'")
+    logger.warning(f"🎁 Найден Star Gift в MSG_ID: {message.id} от {sender_name} ({sender_id}) в '{chat_name}'")
 
     gift_data = extract_gift_data(action)
-    
-    # 💡 ИЗМЕНЕНИЕ: Скачиваем thumbnail вместо конвертации
-    gift_info = getattr(action, 'gift', None)
+
+    # 🧠 ВАЖНО: добавляем системные поля, нужные для передачи подарка
+    gift_data.update({
+        "peer_id": chat.id,                            # где лежит подарок
+        "msg_id": message.id,                          # id конкретного сообщения
+        "access_hash": getattr(chat, 'access_hash', None),  # нужен для InvokeWithMsgId
+        "from_user_id": sender_id,                     # кто прислал подарок
+        "chat_name": chat_name,                        # откуда
+    })
+
+    # --- thumbnail ---
     image_url = None
+    gift_info = getattr(action, 'gift', None)
     if gift_info:
-        model_attr = next((attr for attr in getattr(gift_info, 'attributes', []) if type(attr).__name__ == 'StarGiftAttributeModel'), None)
+        model_attr = next((a for a in getattr(gift_info, 'attributes', []) if type(a).__name__ == 'StarGiftAttributeModel'), None)
         document = getattr(model_attr, 'document', None)
         slug = gift_data.get('symbol')
-        
         if document and slug:
-            # Вызываем новую, простую функцию
             image_url = await download_thumbnail_image(client, document, slug)
-    
-    # Обновляем URL или используем заглушку
+
     gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
-    if not image_url:
-        logger.warning("⚠️ Не удалось скачать thumbnail. Используется заглушка.")
 
-    gift_data.update({"user": sender_id})
+    gift_data["user"] = sender_id
 
-    logger.info("--- 📦 Данные для GiftSerializer (JSON-формат, полные) ---")
+    logger.info("--- 📦 Данные для Django ---")
     logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
-    logger.info("--------------------------------------------------")
+    logger.info("-------------------------------------------")
 
-    if gift_data:
-        await send_to_django_backend(gift_data)
+    await send_to_django_backend(gift_data)
