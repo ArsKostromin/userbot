@@ -5,7 +5,7 @@
 import logging
 from telethon import TelegramClient
 from config import API_ID, API_HASH, SESSION_PATH
-from auth_handler import authorize_with_code, check_authorization_status
+from .auth_handler import authorize_with_code, check_authorization_status
 
 logger = logging.getLogger(__name__)
 

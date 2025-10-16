@@ -4,7 +4,7 @@ import requests
 from userbot import config
 from telethon import utils
 # 💡 ИСПРАВЛЕНИЕ: Импортируем новую простую функцию
-from media_utils import download_thumbnail_image
+from .media_utils import download_thumbnail_image
 
 logger = logging.getLogger(__name__)
 

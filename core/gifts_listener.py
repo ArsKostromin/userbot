@@ -1,6 +1,6 @@
 from telethon import events, utils, functions
 import logging
-from message_handler import handle_star_gift
+from .message_handler import handle_star_gift
 
 logger = logging.getLogger(__name__)
 

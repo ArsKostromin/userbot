@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from telegram_client import create_client, initialize_client
-from gifts_listener import register_gift_listener, process_chat_history
+from .telegram_client import create_client, initialize_client
+from .gifts_listener import register_gift_listener, process_chat_history
 
 logger = logging.getLogger(__name__)
 
