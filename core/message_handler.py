@@ -1,7 +1,7 @@
 import logging
 import json
 import requests
-import config
+from userbot import config
 from telethon import utils
 # 💡 ИСПРАВЛЕНИЕ: Импортируем новую простую функцию
 from media_utils import download_thumbnail_image
