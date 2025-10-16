@@ -116,7 +116,7 @@ async def handle_star_gift(message, client, **kwargs):
         "peer_id": chat.id,                            # где лежит подарок
         "msg_id": message.id,                          # id конкретного сообщения
         "access_hash": getattr(chat, 'access_hash', None),  # нужен для InvokeWithMsgId
-        "from_user_id": sender_id,                     # кто прислал подарок
+        "sender_id": sender_id,                     # кто прислал подарок
         "chat_name": chat_name,                        # откуда
     })
 
@@ -131,8 +131,6 @@ async def handle_star_gift(message, client, **kwargs):
             image_url = await download_thumbnail_image(client, document, slug)
 
     gift_data['image_url'] = image_url or "https://teststudiaorbita.ru/media/avatars/diamond.jpg"
-
-    gift_data["user"] = sender_id
 
     logger.info("--- 📦 Данные для Django ---")
     logger.info(json.dumps(gift_data, indent=4, ensure_ascii=False))
