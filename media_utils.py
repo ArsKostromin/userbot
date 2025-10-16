@@ -11,13 +11,13 @@ async def download_thumbnail_image(client, document, slug: str) -> str | None:
     """
     try:
         if not slug:
-            logger.warning("⚠️ Нет slug — нельзя построить ссылку на превью.")
+            logger.warning("Нет slug — нельзя построить ссылку на превью.")
             return None
 
         full_url = BASE_FRAGMENT_URL.format(slug=slug)
-        logger.info(f"🌐 Генерирую Fragment URL: {full_url}")
+        logger.info(f"Генерирую Fragment URL: {full_url}")
         return full_url
 
     except Exception as e:
-        logger.error(f"💀 Ошибка при формировании Fragment URL: {e}")
+        logger.error(f"Ошибка при формировании Fragment URL: {e}")
         return None

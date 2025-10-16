@@ -1,10 +1,13 @@
 import asyncio
 import logging
+import threading
+import uvicorn
+from fastapi import FastAPI, Request
 
-# Предполагаем, что config, telegram_client и message_handler существуют
+# Твои импорты
 from config import LOG_FORMAT, LOG_DATE_FORMAT, LOG_LEVEL
 from telegram_client import create_client, initialize_client
-from gifts_listener import register_gift_listener, process_chat_history # Импортируем новую функцию
+from gifts_listener import register_gift_listener, process_chat_history
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -14,10 +17,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+app = FastAPI()
 
-async def main():
+
+@app.post("/test")
+async def test_endpoint(request: Request):
+    data = await request.json()
+    logger.info(f"📩 Получен запрос от Django: {data}")
+    return {"status": "ok", "message": "Запрос дошёл до userbot!"}
+
+
+async def main_userbot():
     """
-    Userbot, который мониторит ВСЕ новые сообщения и обрабатывает историю.
+    Основная логика userbot'а: слушает Telegram, ловит подарки и т.д.
     """
     client = create_client()
 
@@ -26,17 +38,11 @@ async def main():
             logger.error("❌ Не удалось инициализировать клиент")
             return
 
-        # 1. ОБРАБОТКА ИСТОРИИ: Проходим по всем старым/непрочитанным сообщениям
-        # ВНИМАНИЕ: Это должно быть выполнено один раз при запуске, чтобы "догнать" историю.
         await process_chat_history(client)
-
-        # 2. REAL-TIME МОНИТОРИНГ: Подключаем listener для новых сообщений
         register_gift_listener(client)
 
-        logger.info("🔄 Userbot запущен. Мониторит все чаты в реальном времени...")
-        logger.info("💡 Для остановки нажмите Ctrl+C")
+        logger.info("🔄 Userbot запущен и мониторит чаты в реальном времени...")
 
-        # --- Запускаем вечный цикл для real-time listener ---
         await client.run_until_disconnected()
 
     except KeyboardInterrupt:
@@ -48,7 +54,14 @@ async def main():
         logger.info("👋 Userbot остановлен")
 
 
+def run_fastapi():
+    """Запускает FastAPI сервер в отдельном потоке"""
+    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
+
+
 if __name__ == "__main__":
-    # Убедитесь, что ваш файл config.py содержит необходимые константы
-    # (LOG_FORMAT, LOG_DATE_FORMAT, LOG_LEVEL)
-    asyncio.run(main())
+    # Запускаем FastAPI и userbot параллельно
+    server_thread = threading.Thread(target=run_fastapi, daemon=True)
+    server_thread.start()
+
+    asyncio.run(main_userbot())
