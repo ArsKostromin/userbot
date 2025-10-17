@@ -1,4 +1,5 @@
 import logging
+import json
 from telethon import functions
 from .telegram_client import get_client
 
@@ -26,14 +27,28 @@ async def send_real_gift(client, user_id: int, username: str, peer_id, gift_msg_
     try:
         # Загружаем сообщение с NFT
         msg = await client.get_messages(peer_id, ids=gift_msg_id)
-        if not msg or not msg.buttons:
+        if not msg:
+            raise ValueError("❌ Сообщение с подарком не найдено")
+
+        # 🔍 Логируем всё сообщение для отладки
+        msg_dict = {
+            "id": msg.id,
+            "text": msg.message,
+            "buttons": [[btn.text for btn in row] for row in (msg.buttons or [])],
+            "reply_markup": str(msg.reply_markup),
+            "raw": msg.to_dict(),
+        }
+        logger.info(f"🧩 Содержимое сообщения с подарком:\n{json.dumps(msg_dict, ensure_ascii=False, indent=2)}")
+
+        # Проверяем наличие inline-кнопок
+        if not msg.buttons:
             raise ValueError("❌ У сообщения с подарком нет inline-кнопок")
 
         # Ищем кнопку "Передать"
         transfer_button = None
         for row in msg.buttons:
             for btn in row:
-                if "Передать" in btn.text:
+                if "Передать" in btn.text or "Transfer" in btn.text:
                     transfer_button = btn
                     break
             if transfer_button:
