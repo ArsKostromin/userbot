@@ -38,7 +38,8 @@ async def send_real_gift(client, user_id: int, username: str, peer_id, gift_msg_
             "reply_markup": str(msg.reply_markup),
             "raw": msg.to_dict(),
         }
-        logger.info(f"🧩 Содержимое сообщения с подарком:\n{json.dumps(msg_dict, ensure_ascii=False, indent=2)}")
+        logger.info(f"🧩 Содержимое сообщения с подарком:\n{json.dumps(msg_dict, ensure_ascii=False, indent=2, default=str)}")
+
 
         # Проверяем наличие inline-кнопок
         if not msg.buttons:
