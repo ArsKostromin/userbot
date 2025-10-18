@@ -21,7 +21,7 @@ async def main_userbot():
             return
 
         # 👇 Добавлено: однократная отправка подарка при старте
-        await send_gift_once(client)
+        # await send_gift_once(client)
 
         # остальное — стандартное поведение
         await process_chat_history(client)
