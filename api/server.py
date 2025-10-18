@@ -1,6 +1,6 @@
 # userbot/api/server.py
 from fastapi import FastAPI, Request
-from core.sender import send_real_gift
+from core.sender import send_gift_once
 import logging
 
 logger = logging.getLogger(__name__)
