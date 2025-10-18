@@ -49,7 +49,6 @@ async def send_gift_once(client: TelegramClient):
         logger.info(f"✅ Чат-источник найден (ID: {source_chat.id})")
 
         # 3. Пересылаем сообщение
-        logger.info(f"Пересылаю сообщение {GIFT_MESSAGE_ID} из '{source_chat.title}' пользователю @{RECIPIENT_USERNAME}...")
         
         await client.send_gift(
             entity=target_user,           # Кому (наш получатель)
