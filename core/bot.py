@@ -24,8 +24,8 @@ async def main_userbot():
         # await send_gift_once(client)
 
         # остальное — стандартное поведение
-        await process_chat_history(client)
-        register_gift_listener(client)
+        # await process_chat_history(client)
+        # register_gift_listener(client)
 
         logger.info("🔄 Userbot запущен и мониторит чаты в реальном времени...")
         await client.run_until_disconnected()
