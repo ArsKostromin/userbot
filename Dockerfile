@@ -1,26 +1,26 @@
 FROM python:3.11-slim
 
-# --- Устанавливаем зависимости ---
-RUN apt-get update && apt-get install -y wget unzip libssl-dev zlib1g-dev && \
+# --- Устанавливаем зависимости для TDLib ---
+RUN apt-get update && apt-get install -y \
+    git cmake g++ make wget unzip zlib1g-dev libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# --- Скачиваем готовую TDLib библиотеку ---
-RUN wget -O /tmp/tdlib.zip https://github.com/tdlib/td/releases/download/v1.8.26/tdlib.zip && \
-    unzip /tmp/tdlib.zip -d /tmp/tdlib && \
-    cp /tmp/tdlib/lib/libtdjson.so /usr/local/lib/libtdjson.so && \
-    rm -rf /tmp/tdlib /tmp/tdlib.zip && \
-    ldconfig
+# --- Качаем и собираем TDLib ---
+RUN git clone --branch v1.8.26 --depth 1 https://github.com/tdlib/td.git /tmp/tdlib && \
+    mkdir /tmp/tdlib/build && cd /tmp/tdlib/build && \
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
+    cmake --build . --target install -j$(nproc) && \
+    rm -rf /tmp/tdlib
 
-# --- Проверим, что TDLib на месте ---
-RUN ls -lh /usr/local/lib/libtdjson.so && echo "✅ TDLib установлена"
+# --- Проверяем, что библиотека установлена ---
+RUN ls -lh /usr/local/lib/libtdjson.so && echo "✅ TDLib собрана и установлена"
 
 # --- Рабочая директория ---
 WORKDIR /app
 
 # --- Устанавливаем Python-зависимости ---
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # --- Копируем код ---
 COPY . .
