@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from telethon.tl.functions.messages import SendMediaRequest
-from telethon.tl.types import InputPeerUser, InputMediaPhotoExternal, InputMessageEntityTextUrl
+from telethon.tl.types import InputPeerUser, InputMediaPhotoExternal
 
 logger = logging.getLogger(__name__)
 
@@ -35,27 +35,18 @@ async def send_gift_once(client):
 
         # --- текст сообщения ---
         message_text = (
-            f"🎁 Тебе подарок, @{username}!\n\n"
+            f"🎁 Подарок для @{username}!\n\n"
             f"{gift_data['name']} ({gift_data['symbol']})\n"
             f"💎 {gift_data['price_ton']} TON\n\n"
-            f"{gift_data['description']}"
+            f"{gift_data['description']}\n\n"
+            f"👉 Подробнее: https://fragment.com/nft/{gift_data['symbol']}"
         )
-
-        # --- добавляем кликабельную ссылку на NFT ---
-        entities = [
-            InputMessageEntityTextUrl(
-                offset=0,
-                length=2,  # для ссылки типа [🎁]
-                url=f"https://fragment.com/nft/{gift_data['symbol']}"
-            )
-        ]
 
         # --- отправляем ---
         await client(SendMediaRequest(
             peer=peer,
             media=media,
             message=message_text,
-            entities=entities,
             random_id=client.rnd_id()
         ))
 
