@@ -50,7 +50,7 @@ async def send_gift_once(client: TelegramClient):
 
         # 3. Пересылаем сообщение
         
-        await client.send_gift(
+        await client.transfer_gift(
             entity=target_user,           # Кому (наш получатель)
             messages=GIFT_MESSAGE_ID,     # Какое сообщение
             from_peer=source_chat         # Откуда (наш чат-источник)
