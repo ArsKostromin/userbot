@@ -1,56 +1,70 @@
-import asyncio
 import logging
-from telethon.tl.functions.messages import SendMediaRequest
-from telethon.tl.types import InputPeerUser, InputMediaPhotoExternal
+from telethon.tl.types import PeerUser, InputPeerUser
+from telethon.errors.rpcerrorlist import PeerIdInvalidError, UserIsBlockedError, PeerFloodError
+from telethon.client import TelegramClient
 
 logger = logging.getLogger(__name__)
 
-async def send_gift_once(client):
+# --- Данные из вашего лога ---
+
+# 1. ПОЛУЧАТЕЛЬ (кому отправляем)
+# Мы будем использовать USERNAME, так как это надежнее,
+# но ID и HASH тоже можно использовать.
+RECIPIENT_USERNAME = "jhgvcbcg"
+RECIPIENT_ID = 1207534564
+RECIPIENT_ACCESS_HASH = -8813161918532140746
+
+# 2. ИСТОЧНИК (откуда берем сообщение)
+# Это название чата, из которого нужно переслать
+SOURCE_CHAT_NAME = "[Ɐ] r" 
+
+# 3. ПОДАРОК (что пересылаем)
+# ID того самого сообщения с "Snake Box"
+GIFT_MESSAGE_ID = 41
+
+# ---------------------------------
+
+
+async def send_gift_once(client: TelegramClient):
     """
-    Отправляет один подарок пользователю jhgvcbcg.
+    Выполняет ОДНУ пересылку "подарка" (сообщения)
+    указанному пользователю.
     """
+    logger.info(f"🚀 Начинаю операцию по отправке подарка...")
+
     try:
-        # --- данные о пользователе ---
-        user_id = 1207534564
-        access_hash = -8813161918532140746
-        username = "jhgvcbcg"
+        # 1. Находим получателя
+        # Использование username - самый простой способ
+        logger.info(f"Ищу получателя: @{RECIPIENT_USERNAME}")
+        
+        # Альтернативно, если username нет, но есть ID и HASH:
+        # target_user = InputPeerUser(user_id=RECIPIENT_ID, access_hash=RECIPIENT_ACCESS_HASH)
+        
+        target_user = await client.get_entity(RECIPIENT_USERNAME)
+        logger.info(f"✅ Получатель найден: {target_user.first_name} (ID: {target_user.id})")
 
-        # --- данные о подарке ---
-        gift_data = {
-            "id": 5852757491946882427,
-            "name": "Snake Box",
-            "symbol": "SnakeBox-29826",
-            "price_ton": 472.0,
-            "image_url": "https://nft.fragment.com/gift/SnakeBox-29826.medium.jpg",
-            "description": "NFT подарок Snake Box (модель Purple, узор Spades, фон Azure Blue)"
-        }
+        # 2. Находим чат-источник
+        logger.info(f"Ищу чат-источник: '{SOURCE_CHAT_NAME}'")
+        source_chat = await client.get_entity(SOURCE_CHAT_NAME)
+        logger.info(f"✅ Чат-источник найден (ID: {source_chat.id})")
 
-        # --- создаём peer ---
-        peer = InputPeerUser(user_id=user_id, access_hash=access_hash)
-
-        # --- создаём медиа объект (из внешнего URL картинки) ---
-        media = InputMediaPhotoExternal(
-            url=gift_data["image_url"]
+        # 3. Пересылаем сообщение
+        logger.info(f"Пересылаю сообщение {GIFT_MESSAGE_ID} из '{source_chat.title}' пользователю @{RECIPIENT_USERNAME}...")
+        
+        await client.forward_messages(
+            entity=target_user,           # Кому (наш получатель)
+            messages=GIFT_MESSAGE_ID,     # Какое сообщение
+            from_peer=source_chat         # Откуда (наш чат-источник)
         )
+        
+        logger.info("✅🎁 Подарок успешно переслан!")
 
-        # --- текст сообщения ---
-        message_text = (
-            f"🎁 Подарок для @{username}!\n\n"
-            f"{gift_data['name']} ({gift_data['symbol']})\n"
-            f"💎 {gift_data['price_ton']} TON\n\n"
-            f"{gift_data['description']}\n\n"
-            f"👉 Подробнее: https://fragment.com/nft/{gift_data['symbol']}"
-        )
-
-        # --- отправляем ---
-        await client(SendMediaRequest(
-            peer=peer,
-            media=media,
-            message=message_text,
-            random_id=client.rnd_id()
-        ))
-
-        logger.info(f"✅ Успешно отправлен подарок пользователю @{username} ({user_id})")
-
+    except PeerIdInvalidError:
+        logger.error(f"❌ Не удалось найти получателя @{RECIPIENT_USERNAME} или чат '{SOURCE_CHAT_NAME}'.")
+        logger.error("Убедитесь, что userbot состоит в этом чате и что username/название верны.")
+    except UserIsBlockedError:
+        logger.warning(f"⚠️ Пользователь @{RECIPIENT_USERNAME} заблокировал этого юзербота.")
+    except PeerFloodError:
+        logger.error("❌ Слишком много запросов (PeerFloodError). Временная блокировка. Попробуйте позже.")
     except Exception as e:
-        logger.exception(f"❌ Ошибка при отправке подарка: {e}")
+        logger.exception(f"❌ Непредвиденная ошибка при отправке: {e}")
