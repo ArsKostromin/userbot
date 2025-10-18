@@ -5,9 +5,12 @@ RUN apt-get update && apt-get install -y \
     git cmake g++ make wget unzip zlib1g-dev libssl-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# --- Качаем и собираем TDLib ---
-RUN git clone --branch v1.8.26 --depth 1 https://github.com/tdlib/td.git /tmp/tdlib && \
-    mkdir /tmp/tdlib/build && cd /tmp/tdlib/build && \
+# --- Качаем и собираем TDLib (по тегу, а не ветке) ---
+RUN git clone --depth 1 https://github.com/tdlib/td.git /tmp/tdlib && \
+    cd /tmp/tdlib && \
+    git fetch --tags && \
+    git checkout v1.8.26 && \
+    mkdir build && cd build && \
     cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
     cmake --build . --target install -j$(nproc) && \
     rm -rf /tmp/tdlib
