@@ -10,14 +10,18 @@ RUN apt-get update && apt-get install -y \
     rm -rf /td && \
     ldconfig
 
+# --- Рабочая директория ---
 WORKDIR /app
 
+# --- Копируем зависимости Python ---
 COPY requirements.txt .
 
-# Устанавливаем Python-зависимости
+# --- Устанавливаем Python-зависимости ---
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# --- Копируем весь проект ---
 COPY . .
 
+# --- Запуск ---
 CMD ["/bin/sh", "-c", "sleep 10 && python main.py"]
