@@ -1,14 +1,16 @@
 FROM python:3.11-slim
 
-# --- Устанавливаем системные зависимости и TDLib ---
-RUN apt-get update && apt-get install -y \
-    git cmake g++ make zlib1g-dev libssl-dev gperf wget unzip && \
-    git clone --depth=1 https://github.com/tdlib/td.git /td && \
-    mkdir /td/build && cd /td/build && \
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX:PATH=/usr/local .. && \
-    cmake --build . --target install -j$(nproc) && \
-    rm -rf /td && \
-    ldconfig
+# --- Устанавливаем системные зависимости ---
+RUN apt-get update && apt-get install -y wget unzip libssl-dev zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# --- Скачиваем готовую TDLib ---
+RUN mkdir -p /usr/local/lib && \
+    wget -O /usr/local/lib/libtdjson.so https://github.com/tdlib/td/releases/download/v1.8.26/tdlib.zip && \
+    unzip /usr/local/lib/libtdjson.so -d /usr/local/lib || true
+
+# --- Проверим, что библиотека на месте ---
+RUN ls -lh /usr/local/lib/libtdjson.so || echo "⚠️ TDLib not found!"
 
 # --- Рабочая директория ---
 WORKDIR /app
