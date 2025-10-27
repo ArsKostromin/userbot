@@ -1,47 +1,48 @@
-# userbot/core/sender.py
 import logging
-from telethon import TelegramClient
-from telethon.tl.types import (
-    InputPeerUser,
-    InputSavedStarGiftUser,
-)
-from telethon.tl.functions.payments import TransferStarGift
+from telethon.tl.core import TLRequest
+from telethon.tl.types import InputSavedStarGiftUser, InputPeerUser
 
 logger = logging.getLogger(__name__)
 
-API_ID = 123456   # твой api_id
-API_HASH = "your_api_hash"
-SESSION = "userbot"
 
-RECIPIENT_ID = 1207534564
-RECIPIENT_ACCESS_HASH = -8813161918532140746
-GIFT_MESSAGE_ID = 41
+class RawTransferStarGift(TLRequest):
+    """
+    Реализация TL-функции:
+    payments.transferStarGift#7f18176a stargift:InputSavedStarGift to_id:InputPeer = Updates;
+    """
+    QUALNAME = "payments.transferStarGift"
 
-async def send_collectible_gift():
-    client = TelegramClient(SESSION, API_ID, API_HASH)
-    await client.start()
+    def __init__(self, stargift, to_id):
+        self.stargift = stargift
+        self.to_id = to_id
 
+
+async def send_snakebox_gift(client):
+    """
+    Отправляет подарок "Snake Box" пользователю @jhgvcbcg (ID: 1207534564)
+    через низкоуровневый RawFunction (MTProto).
+    """
     try:
-        logger.info("🚀 Начинаем передачу коллекционного подарка через MTProto...")
+        logger.info("🚀 Начинаю отправку подарка 'Snake Box' пользователю @jhgvcbcg")
 
-        # Формируем InputPeerUser — получатель
-        peer = InputPeerUser(user_id=RECIPIENT_ID, access_hash=RECIPIENT_ACCESS_HASH)
+        # --- Конкретные данные о подарке ---
+        msg_id = 41
+        user_id = 1207534564
+        access_hash = -8813161918532140746
 
-        # Указываем, какой подарок передаём (по message_id)
-        stargift = InputSavedStarGiftUser(msg_id=GIFT_MESSAGE_ID)
+        # --- Создаём объекты TL ---
+        stargift = InputSavedStarGiftUser(msg_id=msg_id)
+        to_peer = InputPeerUser(user_id=user_id, access_hash=access_hash)
 
-        # Вызов MTProto метода напрямую
-        result = await client.invoke(
-            TransferStarGift(
-                stargift=stargift,
-                to_id=peer
-            )
-        )
+        # --- Создаём запрос ---
+        req = RawTransferStarGift(stargift=stargift, to_id=to_peer)
 
-        logger.info("✅ Коллекционный подарок успешно передан!")
-        logger.info(f"Ответ от Telegram: {result}")
+        # --- Отправляем его через MTProto ---
+        result = await client._invoke_raw(req)
+
+        logger.info("✅ Подарок 'Snake Box' успешно отправлен пользователю @jhgvcbcg")
+        return result
 
     except Exception as e:
-        logger.exception(f"❌ Ошибка при передаче подарка: {e}")
-    finally:
-        await client.disconnect()
+        logger.exception(f"❌ Ошибка при отправке подарка: {e}")
+        raise
