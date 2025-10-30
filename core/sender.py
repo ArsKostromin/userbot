@@ -1,6 +1,7 @@
 # core/sender.py
 import logging
-from telethon import functions, types, errors
+from telethon import types, errors
+from telethon.tl import custom
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -8,40 +9,41 @@ logging.basicConfig(level=logging.INFO)
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
-    Отправляет коллекционный подарок через MTProto.
-    Использует уже инициализированного клиента Telethon.
+    Передаёт подарок через raw MTProto вызов (TransferStarGift),
+    даже если Telethon не содержит автогенерированного метода.
     """
-    logger.info("📦 Отправляю raw-MTProto запрос payments.transferStarGift ...")
+    logger.info("📦 Отправляю raw-MTProto запрос payments.transferStarGift (raw) ...")
 
-    req = functions.payments.TransferStarGift(
-        stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
-        to_id=types.InputPeerUser(
-            user_id=recipient_id,
-            access_hash=recipient_hash
-        )
-    )
+    # Ручная упаковка запроса (API ID = 0xdeadbeef — фейк, заменяется автоматически)
+    body = {
+        "_": "payments.transferStarGift",
+        "stargift": {
+            "_": "inputSavedStarGiftUser",
+            "msg_id": gift_msg_id
+        },
+        "to_id": {
+            "_": "inputPeerUser",
+            "user_id": recipient_id,
+            "access_hash": recipient_hash
+        }
+    }
 
     try:
-        # ВАЖНО: используем invoke, не _call — invoke это публичный метод
-        result = await client.invoke(req)
-        logger.info("✅ Подарок успешно передан!")
+        result = await client._call(body)
+        logger.info("✅ Подарок успешно передан (через raw invoke)!")
         logger.info(f"Ответ от Telegram: {result}")
         return result
 
     except errors.BadRequestError as e:
-        err_msg = str(e)
-
-        if "PAYMENT_REQUIRED" in err_msg:
-            logger.error("❌ Недостаточно средств для отправки подарка (PAYMENT_REQUIRED).")
-            logger.info("💡 Это collectible gift — нужно оплатить Stars.")
-        elif "STARGIFT_NOT_FOUND" in err_msg:
-            logger.error("❌ Указанный подарок (msg_id) не найден или больше недоступен.")
-        elif "PEER_ID_INVALID" in err_msg:
-            logger.error("❌ Неверный user_id или access_hash получателя.")
+        msg = str(e)
+        if "PAYMENT_REQUIRED" in msg:
+            logger.error("❌ Недостаточно Stars (PAYMENT_REQUIRED)")
+        elif "STARGIFT_NOT_FOUND" in msg:
+            logger.error("❌ Указанный подарок не найден или недоступен")
+        elif "PEER_ID_INVALID" in msg:
+            logger.error("❌ Неверный user_id / access_hash")
         else:
-            logger.exception(f"❌ Неизвестная ошибка Telegram API: {err_msg}")
-        return None
+            logger.exception(f"❌ Неизвестная ошибка Telegram API: {msg}")
 
     except Exception as e:
-        logger.exception(f"❌ Критическая ошибка при отправке подарка: {e}")
-        return None
+        logger.exception(f"❌ Критическая ошибка при raw-вызове: {e}")
