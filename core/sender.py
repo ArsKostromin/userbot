@@ -43,7 +43,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
             raise ValueError("Не удалось получить form_id для оплаты")
 
         logger.info(f"🧾 Получена форма оплаты #{form.form_id}, валюта: {form.invoice.currency}")
-
+        logger.info(form)
         creds = InputPaymentCredentialsStars()
 
         result = await client(functions.payments.SendPaymentFormRequest(
