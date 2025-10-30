@@ -44,8 +44,12 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
         logger.info(f"🧾 Получена форма оплаты #{form.form_id}, валюта: {form.invoice.currency}")
         logger.info(form)
-        creds = InputPaymentCredentialsStars()
+        # creds = InputPaymentCredentialsStars()
 
+        creds = types.InputPaymentCredentialsSaved(
+            saved_payment_method_id=saved_payment_method_id
+        )
+        
         result = await client(functions.payments.SendPaymentFormRequest(
             form_id=form.form_id,
             invoice=invoice,
