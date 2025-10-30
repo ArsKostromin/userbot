@@ -1,6 +1,5 @@
 import logging
 from telethon import functions, types, errors
-from telethon.tl.tlobject import TLObject
 from telethon.tl.types import InputPaymentCredentials
 
 
@@ -8,12 +7,12 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-class InputPaymentCredentialsStars(TLObject, InputPaymentCredentials):
+class InputPaymentCredentialsStars(InputPaymentCredentials):
     """
-    Ручная реализация TL-типа:
+    TL-тип:
     inputPaymentCredentialsStars#bbf2dda0 = InputPaymentCredentials;
     """
-    CONSTRUCTOR_ID = 0xbbf2dda0  # из TL схемы Telegram
+    CONSTRUCTOR_ID = 0xbbf2dda0
     SUBCLASS_OF_ID = 0x3417d728  # общий ID для InputPaymentCredentials
 
     def __init__(self):
@@ -23,9 +22,8 @@ class InputPaymentCredentialsStars(TLObject, InputPaymentCredentials):
         return {"_": "inputPaymentCredentialsStars"}
 
     def _bytes(self):
-        # Возвращаем только ID конструктора, без полей (их нет)
+        # TL-конструктор без полей → возвращаем только ID
         return self.CONSTRUCTOR_ID.to_bytes(4, "little")
-
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     logger.info("📦 Проверяем, требует ли подарок оплату...")
