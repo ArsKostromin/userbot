@@ -24,7 +24,7 @@ class InputPaymentCredentialsStars(TLObject):
         return self.CONSTRUCTOR_ID.to_bytes(4, "little")
 
 
-async def send_star_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int, saved_payment_method_id: int):
+async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int, saved_payment_method_id: int):
     """
     Отправка Star Gift платным способом через существующий сохранённый способ оплаты.
     """
