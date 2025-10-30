@@ -1,8 +1,6 @@
 import logging
 from telethon.tl import TLObject
 from telethon.tl.types import InputSavedStarGiftUser, InputPeerUser
-from telethon.tl.types import Updates
-from telethon.helpers import pack_message
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +11,7 @@ class RawTransferStarGift(TLObject):
     payments.transferStarGift#7f18176a stargift:InputSavedStarGift to_id:InputPeer = Updates;
     """
     QUALNAME = "payments.transferStarGift"
-    CONSTRUCTOR_ID = 0x7f18176a  # 1334171242 в десятичной форме
-    SUBCLASS_OF_ID = 0x74ae4240  # Updates
+    CONSTRUCTOR_ID = 0x7f18176a  # 2133245802 в десятичной форме
 
     def __init__(self, stargift, to_id):
         self.stargift = stargift
@@ -45,7 +42,6 @@ async def send_snakebox_gift(client):
 
         req = RawTransferStarGift(stargift=stargift, to_id=to_peer)
 
-        # используем низкоуровневый invoke
         result = await client.invoke(req)
 
         logger.info("✅ Подарок 'Snake Box' успешно отправлен пользователю @jhgvcbcg")
