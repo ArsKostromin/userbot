@@ -1,16 +1,34 @@
 import logging
 from telethon import functions, types, errors
+from telethon.tl import TLObject
+from telethon.utils import pack_bytes
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+# 🔧 Мини-класс для InputPaymentCredentialsStars (так как Telethon его не знает)
+class InputPaymentCredentialsStars(TLObject):
+    CONSTRUCTOR_ID = 0xbbf2dda0  # тот самый из TL схемы
+    SUBCLASS_OF_ID = 0x1aa3e617  # общий ID InputPaymentCredentials
+
+    def __init__(self):
+        pass
+
+    def to_dict(self):
+        return {"_": "inputPaymentCredentialsStars"}
+
+    def _bytes(self):
+        # просто сериализуем конструктор без аргументов
+        return pack_bytes(self.CONSTRUCTOR_ID)
 
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     logger.info("📦 Проверяем, требует ли подарок оплату...")
 
     try:
-        # Шаг 1 — пробуем прямой трансфер (если бесплатный)
         try:
+            # 🔹 Сначала пробуем отправить подарок напрямую
             result = await client(functions.payments.TransferStarGiftRequest(
                 stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
                 to_id=types.InputPeerUser(
@@ -26,7 +44,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
                 raise
             logger.warning("💸 Требуется оплата звёздами, готовим инвойс...")
 
-        # Шаг 2 — invoice для оплаты transfer
+        # 🔹 Создаём invoice для оплаты
         invoice = types.InputInvoiceStarGiftTransfer(
             stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
             to_id=types.InputPeerUser(
@@ -35,20 +53,20 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
             )
         )
 
-        # Шаг 3 — получаем форму оплаты
+        # 🔹 Получаем форму оплаты
         form = await client(functions.payments.GetPaymentFormRequest(invoice=invoice))
         logger.info(f"🧾 Получили форму оплаты: {form}")
 
-        # 🧠 Telethon не знает InputPaymentCredentialsStars, делаем raw dict
-        input_creds_stars = {"_": "inputPaymentCredentialsStars"}
+        # 🔹 Создаём “raw” объект credentials — но корректный TLObject
+        creds = InputPaymentCredentialsStars()
 
-        # Шаг 4 — отправляем оплату (чистый MTProto)
+        # 🔹 Отправляем оплату
         result = await client(functions.payments.SendPaymentFormRequest(
             form_id=form.form_id,
             invoice=invoice,
             requested_info_id=None,
             shipping_option_id=None,
-            credentials=input_creds_stars
+            credentials=creds
         ))
 
         logger.info("✅ Подарок успешно оплачен и передан!")
