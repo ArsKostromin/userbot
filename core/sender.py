@@ -1,3 +1,29 @@
+import logging
+from telethon import functions, types, errors
+from telethon.tl import TLObject
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+
+class InputPaymentCredentialsStars(TLObject):
+    """
+    TL-конструктор:
+    inputPaymentCredentialsStars#bbf2dda0 = InputPaymentCredentials;
+    """
+    CONSTRUCTOR_ID = 0xbbf2dda0
+    SUBCLASS_OF_ID = 0x3417d728  # общий ID для InputPaymentCredentials
+
+    def __init__(self):
+        pass
+
+    def to_dict(self):
+        return {"_": "inputPaymentCredentialsStars"}
+
+    def _bytes(self):
+        return self.CONSTRUCTOR_ID.to_bytes(4, "little")
+
+
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int, saved_payment_method_id: int):
     """
     Отправка Star Gift платным способом через существующий сохранённый способ оплаты.
@@ -27,7 +53,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         # 4️⃣ Отправляем форму платежа
         result = await client(functions.payments.SendPaymentFormRequest(
             form_id=form.form_id,
-            invoice=form.invoice,  # используем именно форму, вернувшуюся от сервера
+            invoice=form.invoice,
             credentials=creds
         ))
 
