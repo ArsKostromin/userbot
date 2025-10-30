@@ -37,7 +37,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         msg = str(e)
         if "PAYMENT_REQUIRED" in msg:
             logger.error("❌ Недостаточно Stars (PAYMENT_REQUIRED)")
-            logger.info("💡 Gift, скорее всего, collectible — нужно оплатить Stars через invoice.")
+            logger.info(msg)
         elif "STARGIFT_NOT_FOUND" in msg:
             logger.error("❌ Указанный подарок (msg_id) не найден или больше недоступен.")
         elif "PEER_ID_INVALID" in msg:
