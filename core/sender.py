@@ -58,6 +58,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
     except errors.RPCError as e:
         logger.error(f"❌ RPC ошибка: {e.__class__.__name__}: {e}")
+        logger.error(e)
     except Exception as e:
         logger.exception(f"💀 Критическая ошибка при отправке подарка: {e}")
 
