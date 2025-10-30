@@ -4,7 +4,7 @@ from telethon import functions, types
 logger = logging.getLogger(__name__)
 
 
-async def send_gift_once(client):
+async def send_snakebox_gift(client):
     """
     Отправляет подарок "Snake Box" пользователю @jhgvcbcg (ID: 1207534564)
     через официальный метод Telethon:
