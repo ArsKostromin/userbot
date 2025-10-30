@@ -32,29 +32,18 @@ async def send_snakebox_gift(client):
     # ───────────────────────────────
     #  Перехват ошибок Telethon
     # ───────────────────────────────
-    except errors.FloodWaitError as e:
-        logger.warning(f"⏳ Telegram просит подождать {e.seconds} сек перед повтором")
-        await asyncio.sleep(e.seconds + 1)
-        return await send_snakebox_gift(client)
-
-    except errors.PaymentRequiredError:
-        logger.error("💰 Недостаточно Stars или подарок недоступен для передачи.")
-        logger.error("Проверь, что подарок куплен и msg_id верный.")
-        return None
-
-    except errors.UserIsBlockedError:
-        logger.error("🚫 Получатель заблокировал тебя — отправка невозможна.")
-        return None
-
-    except errors.PeerIdInvalidError:
-        logger.error("❌ Некорректный user_id или access_hash получателя.")
-        return None
-
-    except errors.RPCError as e:
-        # Общий обработчик всех RPC ошибок
-        logger.error(f"⚠️ RPC ошибка: {e.__class__.__name__} — {e}")
-        return None
+    except errors.BadRequestError as e:
+        # Обрабатываем конкретные ошибки Telegram API
+        if "PAYMENT_REQUIRED" in str(e):
+            logger.error("❌ Недостаточно средств для отправки подарка (PAYMENT_REQUIRED)")
+            logger.info("💡 Проверь баланс Stars в Telegram или купи Stars перед отправкой.")
+        elif "STARGIFT_NOT_FOUND" in str(e):
+            logger.error("❌ Указанный подарок (Snake Box) не найден или больше недоступен.")
+        elif "PEER_ID_INVALID" in str(e):
+            logger.error("❌ Неверный user_id или access_hash получателя.")
+        else:
+            logger.exception(f"❌ Неизвестная ошибка Telegram API: {e}")
 
     except Exception as e:
-        logger.exception(f"❌ Непредвиденная ошибка при отправке подарка: {e}")
+        logger.exception(f"❌ Критическая ошибка при отправке подарка: {e}")
         raise
