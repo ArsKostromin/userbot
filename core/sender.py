@@ -6,13 +6,9 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
-    """
-    Отправка коллекционного подарка (StarGift) через MTProto по правилам Telegram API.
-    Если подарок требует оплату Stars — выполняем полную платёжную цепочку.
-    """
+    logger.info("📦 Проверяем, требует ли подарок оплату...")
 
     try:
-        logger.info("📦 Проверяем, требует ли подарок оплату...")
         # Шаг 1 — пробуем прямой трансфер (если бесплатный)
         try:
             result = await client(functions.payments.TransferStarGiftRequest(
@@ -27,11 +23,10 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
         except errors.RPCError as e:
             if "PAYMENT_REQUIRED" not in str(e):
-                raise  # Это не ошибка об оплате — пусть дальше кинет
-
+                raise
             logger.warning("💸 Требуется оплата звёздами, готовим инвойс...")
 
-        # Шаг 2 — создаём invoice для оплаты transfer'а
+        # Шаг 2 — invoice для оплаты transfer
         invoice = types.InputInvoiceStarGiftTransfer(
             stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
             to_id=types.InputPeerUser(
@@ -44,13 +39,16 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         form = await client(functions.payments.GetPaymentFormRequest(invoice=invoice))
         logger.info(f"🧾 Получили форму оплаты: {form}")
 
-        # Шаг 4 — отправляем оплату
+        # 🧠 Telethon не знает InputPaymentCredentialsStars, делаем raw dict
+        input_creds_stars = {"_": "inputPaymentCredentialsStars"}
+
+        # Шаг 4 — отправляем оплату (чистый MTProto)
         result = await client(functions.payments.SendPaymentFormRequest(
             form_id=form.form_id,
             invoice=invoice,
             requested_info_id=None,
             shipping_option_id=None,
-            credentials=types.InputPaymentCredentialsStars(),
+            credentials=input_creds_stars
         ))
 
         logger.info("✅ Подарок успешно оплачен и передан!")
