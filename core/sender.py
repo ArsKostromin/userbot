@@ -24,7 +24,7 @@ class InputPaymentCredentialsStars(TLObject):
         return self.CONSTRUCTOR_ID.to_bytes(4, "little")
 
 
-async def send_snakebox_gift_paid(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
+async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
     Передача подарка через MTProto (Telethon) платным способом:
     — формируем инвойс, получаем форму оплаты, сразу оплачиваем звёздами.
