@@ -15,10 +15,7 @@ async def main_userbot():
 
         # 👇 тут единственное действие — отправка подарка
         await send_snakebox_gift(
-            client,
-            recipient_id=1207534564,
-            recipient_hash=-8813161918532140746,
-            gift_msg_id=41
+            client
         )
         logger.info("🎉 Отправка завершена, бота можно останавливать.")
         await asyncio.sleep(2)

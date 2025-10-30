@@ -1,53 +1,76 @@
+# core/sender.py
 import logging
-from telethon import errors
+from telethon import functions, types, errors
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
+async def send_snakebox_gift(client):
     """
-    Отправляет коллекционный подарок через raw MTProto.
-    Использует invoke с TL-сырой структурой, как описано в:
-    https://docs.telethon.dev/en/stable/concepts/full-api.html#invoking-raw-methods
+    Тестируем MTProto raw вызовы через три способа:
+    1. Telethon TL functions.*
+    2. Прямой invoke(functions.*)
+    3. Raw dict TL структура (чистый MTProto)
     """
 
-    logger.info("📦 Отправляю raw-MTProto запрос payments.transferStarGift ...")
+    test_username = "test_snakebox_228"
 
-    # TL-сырой запрос — точно по спецификации Telegram
-    raw_request = {
-        "_": "payments.transferStarGift",
-        "stargift": {
-            "_": "inputSavedStarGiftUser",
-            "msg_id": gift_msg_id
-        },
-        "to_id": {
-            "_": "inputPeerUser",
-            "user_id": recipient_id,
-            "access_hash": recipient_hash
-        }
-    }
+    logger.info("🚀 Тестируем channels.checkUsername для имени: %s", test_username)
 
+    # 🥇 1. Классический способ через Telethon TL-класс
     try:
-        # 🧠 Ключевое — invoke, не _call!
-        result = await client.invoke(raw_request)
-        logger.info("✅ Подарок успешно передан!")
-        logger.info(f"Ответ Telegram: {result}")
-        return result
-
-    except errors.BadRequestError as e:
-        msg = str(e)
-        if "PAYMENT_REQUIRED" in msg:
-            logger.error("❌ Недостаточно Stars (PAYMENT_REQUIRED)")
-            logger.info("💡 Gift, скорее всего, collectible — нужно оплатить Stars через invoice.")
-        elif "STARGIFT_NOT_FOUND" in msg:
-            logger.error("❌ Указанный подарок (msg_id) не найден или больше недоступен.")
-        elif "PEER_ID_INVALID" in msg:
-            logger.error("❌ Неверный user_id или access_hash получателя.")
-        else:
-            logger.exception(f"❌ Неизвестная ошибка Telegram API: {msg}")
-        return None
-
+        logger.info("🥇 Способ 1 — через functions.channels.CheckUsername")
+        result1 = await client(functions.channels.CheckUsernameRequest(
+            channel=types.InputChannel(
+                channel_id=123456,  # поставь свой id канала если надо
+                access_hash=0
+            ),
+            username=test_username
+        ))
+        logger.info(f"✅ Ответ (способ 1): {result1}")
     except Exception as e:
-        logger.exception(f"❌ Критическая ошибка при raw-вызове: {e}")
-        return None
+        logger.error(f"❌ Ошибка (способ 1): {e}")
+
+    # 🥈 2. Через invoke() с TL объектом
+    try:
+        logger.info("🥈 Способ 2 — invoke(functions.channels.CheckUsernameRequest)")
+        req = functions.channels.CheckUsernameRequest(
+            channel=types.InputChannel(
+                channel_id=123456,
+                access_hash=0
+            ),
+            username=test_username
+        )
+        result2 = await client.invoke(req)
+        logger.info(f"✅ Ответ (способ 2): {result2}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка (способ 2): {e}")
+
+    # 🥉 3. Через raw dict (настоящий MTProto “в лоб”)
+    try:
+        logger.info("🥉 Способ 3 — raw dict, pure MTProto")
+        raw_request = {
+            "_": "channels.checkUsername",
+            "channel": {
+                "_": "inputChannel",
+                "channel_id": 123456,   # фейковый айди, просто для примера
+                "access_hash": 0
+            },
+            "username": test_username
+        }
+
+        # invoke можно использовать только с TLObject, поэтому напрямую лезем в client._call
+        result3 = await client._call(raw_request)
+        logger.info(f"✅ Ответ (способ 3): {result3}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка (способ 3): {e}")
+
+    logger.info("🏁 Все три способа отработали — смотри, какой реально прошёл.")
+
+
+# Пример использования:
+# from telethon import TelegramClient
+# client = TelegramClient('user', API_ID, API_HASH)
+# await client.start()
+# await send_snakebox_gift(client)
