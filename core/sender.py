@@ -1,50 +1,51 @@
-# core/sender.py
 import logging
-from telethon import functions, errors
+from telethon import functions, types, errors
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 
-async def send_snakebox_gift(client):
+async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
-    Тестируем MTProto вызов (help.getNearestDc) через три способа:
-    1. Telethon TL functions.* — await client(function)
-    2. Прямой invoke / _invoke_with_layer (ручной TL)
-    3. Raw dict через client._sender.send()
+    Отправляет коллекционный подарок через официальный MTProto метод:
+    payments.transferStarGift (вызов Telethon TL-функции).
     """
 
-    logger.info("🚀 Тестируем MTProto методы (help.getNearestDc)")
+    logger.info("📦 Отправляю подарок через Telethon TL-функцию payments.transferStarGift ...")
 
-    # 🥇 1. Классический способ через Telethon TL-функцию
     try:
-        logger.info("🥇 Способ 1 — await client(functions.help.GetNearestDcRequest())")
-        result1 = await client(functions.help.GetNearestDcRequest())
-        logger.info(f"✅ Ответ (способ 1): {result1}")
+        # 🧱 Конструируем аргументы строго по TL схеме
+        request = functions.payments.TransferStarGiftRequest(
+            stargift=types.InputSavedStarGiftUser(
+                msg_id=gift_msg_id
+            ),
+            to_id=types.InputPeerUser(
+                user_id=recipient_id,
+                access_hash=recipient_hash
+            )
+        )
+
+        # 🚀 Отправляем MTProto-вызов
+        result = await client(request)
+
+        logger.info("✅ Подарок успешно передан!")
+        logger.info(f"Ответ Telegram: {result}")
+
+        return result
+
+    except errors.BadRequestError as e:
+        msg = str(e)
+        if "PAYMENT_REQUIRED" in msg:
+            logger.error("❌ Недостаточно Stars (PAYMENT_REQUIRED)")
+            logger.info("💡 Gift, скорее всего, collectible — нужно оплатить Stars через invoice.")
+        elif "STARGIFT_NOT_FOUND" in msg:
+            logger.error("❌ Указанный подарок (msg_id) не найден или больше недоступен.")
+        elif "PEER_ID_INVALID" in msg:
+            logger.error("❌ Неверный user_id или access_hash получателя.")
+        else:
+            logger.exception(f"❌ Неизвестная ошибка Telegram API: {msg}")
+        return None
+
     except Exception as e:
-        logger.error(f"❌ Ошибка (способ 1): {e}")
-
-    # 🥈 2. Через внутренний invoke_with_layer
-    try:
-        logger.info("🥈 Способ 2 — _invoke_with_layer(214, TLObject)")
-        request = functions.help.GetNearestDcRequest()
-        result2 = await client._invoke_with_layer(214, request)
-        logger.info(f"✅ Ответ (способ 2): {result2}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка (способ 2): {e}")
-
-    # 🥉 3. Через raw dict (чистый MTProto “в лоб”)
-    try:
-        logger.info("🥉 Способ 3 — raw dict через client._sender.send()")
-        raw_request = {"_": "help.getNearestDc"}
-        result3 = await client._sender.send(raw_request)
-        logger.info(f"✅ Ответ (способ 3): {result3}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка (способ 3): {e}")
-
-    logger.info("🏁 Все три способа отработали — смотри, какой реально прошёл.")
-
-# from telethon import TelegramClient
-# client = TelegramClient('user', API_ID, API_HASH)
-# await client.start()
-# await send_snakebox_gift(client)
+        logger.exception(f"❌ Критическая ошибка при вызове payments.transferStarGift: {e}")
+        return None
