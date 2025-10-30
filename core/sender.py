@@ -14,28 +14,29 @@ async def send_snakebox_gift(client):
 
     ⚠️ Для collectible gifts требуется отдельная оплата Stars.
     """
-    msg_id = 41
-    user_id = 1207534564
-    access_hash = -8813161918532140746
+    RECIPIENT_ID = 1207534564
+    RECIPIENT_ACCESS_HASH = -8813161918532140746
+    GIFT_MESSAGE_ID = 41
+
+
+    req = functions.payments.TransferStarGift(
+        stargift=types.InputSavedStarGiftUser(msg_id=GIFT_MESSAGE_ID),
+        to_id=types.InputPeerUser(
+            user_id=RECIPIENT_ID,
+            access_hash=RECIPIENT_ACCESS_HASH
+        )
+    )
+
+    logger.info("📦 Отправляю raw-MTProto запрос payments.transferStarGift ...")
 
     try:
-        logger.info("🚀 Начинаю отправку подарка 'Snake Box' пользователю @jhgvcbcg")
+        # Передаём TL-объект напрямую через invoke
+        result = await client._call(req)  # напрямую через MTProtoSender
+        logger.info(f"✅ Успешно: {result}")
 
-        stargift = types.InputSavedStarGiftUser(msg_id=msg_id)
-        to_peer = types.InputPeerUser(user_id=user_id, access_hash=access_hash)
-
-        # Попытка перевести подарок
-        result = await client(functions.payments.TransferStarGiftRequest(
-            stargift=stargift,
-            to_id=to_peer
-        ))
-
-        logger.info("✅ Подарок 'Snake Box' успешно отправлен пользователю @jhgvcbcg")
-        return result
-
-    # ───────────────────────────────
+    # !!!
     #  Перехват ошибок Telethon
-    # ───────────────────────────────
+    # !!!
     except errors.BadRequestError as e:
         err_msg = str(e)
 
