@@ -27,20 +27,19 @@ class InputPaymentCredentialsStars(TLObject):
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
-    Отправка подарка через MTProto (с поддержкой звёзд).
-    Если подарок требует оплату — формирует invoice и логирует ссылку на оплату.
+    Отправка подарка через MTProto (с оплатой звёздами со счёта отправителя).
     """
     logger.info("📦 Проверяем, требует ли подарок оплату...")
 
     try:
-        # 1️⃣ Пробуем бесплатный перевод
+        # 1️⃣ Пробуем бесплатный перевод (иногда Telegram разрешает без оплаты)
         try:
             result = await client(functions.payments.TransferStarGiftRequest(
                 stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
                 to_id=types.InputPeerUser(user_id=recipient_id, access_hash=recipient_hash)
             ))
             logger.info("✅ Подарок отправлен без оплаты!")
-            return result
+            return {"status": "ok", "details": result}
 
         except errors.RPCError as e:
             if "PAYMENT_REQUIRED" not in str(e):
@@ -55,37 +54,30 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
         # 3️⃣ Получаем форму оплаты
         form = await client(functions.payments.GetPaymentFormRequest(invoice=invoice))
-
         if not hasattr(form, "form_id"):
             raise ValueError("Не удалось получить form_id для оплаты")
 
         logger.info(f"🧾 Получена форма оплаты #{form.form_id} | Валюта: {form.invoice.currency}")
 
-        # 4️⃣ Собираем ссылку на оплату (Telegram invoice deep link)
-        slug = getattr(form, "slug", None)
-        if slug:
-            pay_url = f"https://t.me/star?startapp=pay_{slug}"
-            logger.info(f"💫 Ссылка на оплату звёздами: {pay_url}")
-        else:
-            # резервный вариант: tg://invoice/<slug> — старый формат
-            pay_url = f"tg://invoice/{form.form_id}"
-            logger.info(f"💫 Ссылка на оплату (tg://): {pay_url}")
-            logger.info(f"https://t.me/openinvoice?form={form.form_id}")
+        # 4️⃣ Формируем корректный TL-конструктор для оплаты звёздами
+        creds = InputPaymentCredentialsStars(flags=0)
 
-        logger.info("⚠️ Отправь ссылку пользователю, чтобы он сам оплатил подарок!")
+        # 5️⃣ Отправляем форму оплаты — Telegram сам спишет звёзды с текущего аккаунта
+        result = await client(functions.payments.SendPaymentFormRequest(
+            form_id=form.form_id,
+            invoice=invoice,
+            credentials=creds
+        ))
 
-        # 5️⃣ Возвращаем данные для внешней логики (можно записать в БД)
-        return {
-            "status": "payment_required",
-            "form_id": form.form_id,
-            "slug": slug,
-            "pay_url": pay_url,
-            "currency": form.invoice.currency
-        }
+        logger.info("✅ Подарок успешно оплачен и отправлен!")
+        logger.info(f"Ответ Telegram: {result}")
+
+        return {"status": "paid", "details": result}
 
     except errors.RPCError as e:
         logger.error(f"❌ RPC ошибка: {e.__class__.__name__} — {e}")
+        return {"status": "error", "error": str(e)}
+
     except Exception as e:
         logger.exception(f"💀 Критическая ошибка при отправке подарка: {e}")
-
-    return None
+        return {"status": "error", "error": str(e)}
