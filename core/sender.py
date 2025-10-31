@@ -22,13 +22,13 @@ class InputPaymentCredentialsStars(TLObject):
         return {"_": "inputPaymentCredentialsStars", "flags": self.flags}
 
     def _bytes(self):
-        # 4 байта конструктора + 4 байта флагов (0x00000000)
         return self.CONSTRUCTOR_ID.to_bytes(4, "little") + self.flags.to_bytes(4, "little")
 
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
-    Отправка подарка через MTProto (с поддержкой оплаты звёздами).
+    Отправка подарка через MTProto (с поддержкой звёзд).
+    Если подарок требует оплату — формирует invoice и логирует ссылку на оплату.
     """
     logger.info("📦 Проверяем, требует ли подарок оплату...")
 
@@ -45,7 +45,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         except errors.RPCError as e:
             if "PAYMENT_REQUIRED" not in str(e):
                 raise
-            logger.warning("💸 Требуется оплата звёздами — формируем инвойс...")
+            logger.warning("💸 Требуется оплата звёздами — создаём invoice...")
 
         # 2️⃣ Формируем invoice
         invoice = types.InputInvoiceStarGiftTransfer(
@@ -55,24 +55,32 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
         # 3️⃣ Получаем форму оплаты
         form = await client(functions.payments.GetPaymentFormRequest(invoice=invoice))
+
         if not hasattr(form, "form_id"):
             raise ValueError("Не удалось получить form_id для оплаты")
 
         logger.info(f"🧾 Получена форма оплаты #{form.form_id} | Валюта: {form.invoice.currency}")
 
-        # 4️⃣ Формируем корректный TL-конструктор
-        creds = InputPaymentCredentialsStars(flags=0)
+        # 4️⃣ Собираем ссылку на оплату (Telegram invoice deep link)
+        slug = getattr(form, "slug", None)
+        if slug:
+            pay_url = f"https://t.me/star?startapp=pay_{slug}"
+            logger.info(f"💫 Ссылка на оплату звёздами: {pay_url}")
+        else:
+            # резервный вариант: tg://invoice/<slug> — старый формат
+            pay_url = f"tg://invoice/{form.form_id}"
+            logger.info(f"💫 Ссылка на оплату (tg://): {pay_url}")
 
-        # 5️⃣ Отправляем форму оплаты
-        result = await client(functions.payments.SendPaymentFormRequest(
-            form_id=form.form_id,
-            invoice=invoice,
-            credentials=creds
-        ))
+        logger.info("⚠️ Отправь ссылку пользователю, чтобы он сам оплатил подарок!")
 
-        logger.info("✅ Подарок успешно оплачен и передан!")
-        logger.info(f"Ответ Telegram: {result}")
-        return result
+        # 5️⃣ Возвращаем данные для внешней логики (можно записать в БД)
+        return {
+            "status": "payment_required",
+            "form_id": form.form_id,
+            "slug": slug,
+            "pay_url": pay_url,
+            "currency": form.invoice.currency
+        }
 
     except errors.RPCError as e:
         logger.error(f"❌ RPC ошибка: {e.__class__.__name__} — {e}")
