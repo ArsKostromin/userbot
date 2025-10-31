@@ -70,6 +70,7 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
             # резервный вариант: tg://invoice/<slug> — старый формат
             pay_url = f"tg://invoice/{form.form_id}"
             logger.info(f"💫 Ссылка на оплату (tg://): {pay_url}")
+            logger.info(f"https://t.me/openinvoice?form={form.form_id}")
 
         logger.info("⚠️ Отправь ссылку пользователю, чтобы он сам оплатил подарок!")
 
