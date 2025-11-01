@@ -1,13 +1,37 @@
 # core/sender.py
 import logging
 from telethon import functions, types, errors
+from telethon.tl.tlobject import TLObject  # ‼️ Убедись, что этот импорт есть
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# 🛑 УБИРАЕМ ЭТОТ КЛАСС. Он больше не нужен.
-# class InputPaymentCredentialsStars(TLObject):
-#     ...
+
+# ‼️ ‼️ ‼️
+# ВЕРНИ ЭТОТ КЛАСС ОБРАТНО
+# (Так как в telethon 1.41.2 его нет в 'types')
+# ‼️ ‼️ ‼️
+class InputPaymentCredentialsStars(TLObject):
+    """
+    TL-конструктор:
+    inputPaymentCredentialsStars#bbf2dda0 flags:int = InputPaymentCredentials;
+    """
+    CONSTRUCTOR_ID = 0xbbf2dda0
+    SUBCLASS_OF_ID = 0x3417d728  # InputPaymentCredentials
+
+    def __init__(self, flags: int = 0):
+        # В TL-схеме у него нет флагов, но в RPC-ответе от Telegram
+        # (в 'form') он может прийти. 
+        # Оставим flags=0, как ты и делал, это безопасно.
+        self.flags = flags
+
+    def to_dict(self):
+        return {"_": "inputPaymentCredentialsStars", "flags": self.flags}
+
+    def _bytes(self):
+        # 4 байта конструктора + 4 байта флагов
+        return self.CONSTRUCTOR_ID.to_bytes(4, "little") + self.flags.to_bytes(4, "little")
+
 
 async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gift_msg_id: int):
     """
@@ -17,7 +41,6 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
 
     try:
         # 1️⃣ Пробуем бесплатный перевод
-        # Это сработает, только если подарок был "выигран" (как в Змейке) и уже числится за юзером.
         try:
             result = await client(functions.payments.TransferStarGiftRequest(
                 stargift=types.InputSavedStarGiftUser(msg_id=gift_msg_id),
@@ -39,8 +62,6 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         )
 
         # 3️⃣ Получаем форму оплаты
-        # Если у юзербота ЕСТЬ XTR на балансе, эта форма будет ожидать оплату в XTR.
-        # Если у юзербота НЕТ XTR, эта форма будет ожидать оплату в USD/EUR.
         form = await client(functions.payments.GetPaymentFormRequest(invoice=invoice))
         if not hasattr(form, "form_id"):
             raise ValueError("Не удалось получить form_id для оплаты")
@@ -48,23 +69,17 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         logger.info(f"🧾 Получена форма оплаты #{form.form_id} | Валюта: {form.invoice.currency}")
 
         # 4️⃣ Формируем корректный TL-конструктор
-        # 
-        # ‼️ ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ В КОДЕ ‼️
-        # Используем встроенный тип Telethon, а не самописный.
         #
-        creds = types.InputPaymentCredentialsStars(flags=0)
+        # ‼️ ИСПРАВЛЕНИЕ: Используем СВОЙ класс, а не types.
+        #
+        creds = InputPaymentCredentialsStars(flags=0)
 
         # 5️⃣ Отправляем форму оплаты
-        #
-        # ‼️ ВНИМАНИЕ ‼️
-        # Если у юзербота на балансе 0 XTR, этот запрос ВСЕ РАВНО УПАДЕТ
-        # с ошибкой FORM_UNSUPPORTED.
-        #
         logger.info("💳 Пытаемся оплатить форму с помощью XTR...")
         result = await client(functions.payments.SendPaymentFormRequest(
             form_id=form.form_id,
             invoice=invoice,
-            credentials=creds
+            credentials=creds  # <-- Теперь это твой кастомный класс
         ))
 
         logger.info("✅ Подарок успешно оплачен звёздами (XTR) и передан!")
@@ -78,6 +93,8 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
             logger.critical("Пополните баланс (например, через @PremiumBot) и попробуйте снова.")
         else:
             logger.error(f"❌ RPC ошибка: {e.__class__.__name__} — {e}")
+    except AttributeError as e:
+        logger.error(f"❌ AttributeError (вероятно, ошибка в импорте): {e}")
     except Exception as e:
         logger.exception(f"💀 Критическая ошибка при отправке подарка: {e}")
 
