@@ -84,7 +84,6 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
     except errors.RPCError as e:
         if "FORM_UNSUPPORTED" in str(e):
             logger.critical("FORM_UNSUPPORTED — у юзербота нет XTR на балансе.")
-            logger.critical("Пополните баланс (например, через @PremiumBot).")
         else:
             logger.error(f"RPC ошибка: {e.__class__.__name__} — {e}")
 
