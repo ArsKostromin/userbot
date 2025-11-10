@@ -2,9 +2,9 @@
 import logging
 from telethon import functions, types, errors
 from telethon.tl.tlobject import TLObject
+from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
 
 
 class InputPaymentCredentialsStars(TLObject):
@@ -88,3 +88,91 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
         logger.exception(f"💀 Критическая ошибка при отправке подарка: {e}")
 
     return None
+
+
+async def send_gift_to_user(
+    client,
+    gift_id: int,
+    recipient_telegram_id: int,
+    peer_id: Optional[int] = None,
+    msg_id: Optional[int] = None,
+    access_hash: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Отправляет подарок пользователю по запросу из Django API.
+    
+    Args:
+        client: Telethon клиент
+        gift_id: ID подарка в Django БД
+        recipient_telegram_id: Telegram ID получателя
+        peer_id: ID чата где лежит подарок (опционально)
+        msg_id: ID сообщения с подарком (опционально)
+        access_hash: Access hash чата (опционально)
+    
+    Returns:
+        Dict с результатом отправки
+    """
+    logger.info(f"🎁 Отправка подарка ID={gift_id} пользователю {recipient_telegram_id}")
+    
+    try:
+        # Получаем access_hash получателя
+        try:
+            recipient_entity = await client.get_entity(recipient_telegram_id)
+            recipient_hash = getattr(recipient_entity, 'access_hash', None)
+            if not recipient_hash:
+                logger.error(f"❌ Не удалось получить access_hash для пользователя {recipient_telegram_id}")
+                return {
+                    "status": "error",
+                    "error": f"Не удалось получить access_hash для пользователя {recipient_telegram_id}"
+                }
+        except Exception as e:
+            logger.error(f"❌ Ошибка при получении entity пользователя {recipient_telegram_id}: {e}")
+            return {
+                "status": "error",
+                "error": f"Не удалось найти пользователя {recipient_telegram_id}: {str(e)}"
+            }
+        
+        # Если есть msg_id, используем его для отправки
+        if msg_id:
+            logger.info(f"📨 Используем сохранённый msg_id={msg_id} для отправки подарка")
+            result = await send_snakebox_gift(
+                client=client,
+                recipient_id=recipient_telegram_id,
+                recipient_hash=recipient_hash,
+                gift_msg_id=msg_id
+            )
+        else:
+            # Пытаемся найти подарок в сохранённых подарках пользователя
+            # Для этого нужно получить список сохранённых подарков
+            logger.warning("⚠️ msg_id не указан, попытка найти подарок в сохранённых...")
+            # TODO: Реализовать поиск подарка по gift_id в сохранённых подарках
+            # Пока возвращаем ошибку
+            return {
+                "status": "error",
+                "error": "msg_id не указан и поиск в сохранённых подарках не реализован"
+            }
+        
+        if result:
+            if isinstance(result, dict) and result.get("status") == "payment_required":
+                return {
+                    "status": "payment_required",
+                    "data": result
+                }
+            else:
+                return {
+                    "status": "success",
+                    "message": "Подарок успешно отправлен",
+                    "data": result
+                }
+        else:
+            return {
+                "status": "error",
+                "error": "Неизвестная ошибка при отправке подарка"
+            }
+            
+    except Exception as e:
+        logger.exception(f"❌ Критическая ошибка при отправке подарка: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }

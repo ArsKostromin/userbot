@@ -27,8 +27,16 @@ def create_client():
         raise
 
 
-def get_client():
+_client_instance = None
+
+def get_client_instance():
+    """Возвращает глобальный экземпляр клиента"""
     return _client_instance
+
+def set_client_instance(client):
+    """Устанавливает глобальный экземпляр клиента"""
+    global _client_instance
+    _client_instance = client
 
 async def initialize_client(client):
     """
