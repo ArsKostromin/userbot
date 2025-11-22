@@ -1,4 +1,5 @@
 # userbot/api/server.py
+# userbot/api/server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -22,9 +23,11 @@ class SendGiftRequest(BaseModel):
     """Запрос на отправку подарка"""
     gift_id: int
     recipient_telegram_id: int
-    peer_id: Optional[int] = None
-    msg_id: Optional[int] = None
-    access_hash: Optional[int] = None
+    # Эти поля опциональны и больше не используются в логике отправки,
+    # но оставлены для совместимости с внешним API/документацией.
+    peer_id: Optional[int] = None 
+    msg_id: Optional[int] = None 
+    access_hash: Optional[int] = None 
 
 
 class CreateStarInvoiceRequest(BaseModel):
@@ -49,13 +52,12 @@ async def send_gift(request: SendGiftRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
     
     try:
+        # Вызываем send_gift_to_user, передавая только необходимые параметры
         result = await send_gift_to_user(
             client=client,
-            gift_id=request.gift_id,
+            gift_id_external=request.gift_id, 
             recipient_telegram_id=request.recipient_telegram_id,
-            peer_id=request.peer_id,
-            msg_id=request.msg_id,
-            access_hash=request.access_hash
+            gift_msg_id=request.msg_id # Если msg_id не передан, функция найдет его сама
         )
         
         if result.get("status") == "success":

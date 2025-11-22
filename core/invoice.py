@@ -1,6 +1,6 @@
 # core/invoice.py
 import logging
-import requests
+import httpx # Изменено с requests на httpx для асинхронности
 import os
 from typing import Dict, Any, Optional
 
@@ -48,15 +48,19 @@ async def create_star_invoice(
         "title": title or "Оплата вывода NFT",
         "description": description or f"Вывод подарка #{gift_id}. Комиссия {amount} звёзд ⭐",
         "payload": f"withdraw_gift_{gift_id}",
-        "provider_token": "",  # для Stars — оставить пустым!
+        "provider_token": "",  # для Stars — оставить пустым!
         "currency": "XTR",
         "prices": [{"label": "Комиссия", "amount": amount}],
         "max_tip_amount": 0,
-        "suggested_tip_amounts": [],
+        "suggested_tip_amounts":,
     }
     
+    r = None
     try:
-        r = requests.post(url, json=payload, timeout=20)
+        # Использование httpx.AsyncClient для асинхронного выполнения POST-запроса
+        async with httpx.AsyncClient(timeout=20) as http_client:
+            r = await http_client.post(url, json=payload)
+        
         r.raise_for_status()
         data = r.json()
         
@@ -78,15 +82,19 @@ async def create_star_invoice(
                 "error": data.get("description", "Неизвестная ошибка Telegram API")
             }
             
-    except requests.RequestException as e:
-        try:
-            err_data = r.json() if 'r' in locals() else str(e)
-        except Exception:
+    except httpx.RequestError as e: # Изменено исключение на httpx
+        err_data = ""
+        if r is not None:
+             try:
+                 err_data = r.json()
+             except Exception:
+                 err_data = r.text
+        else:
             err_data = str(e)
+            
         logger.error(f"💀 Не удалось создать инвойс: {e} | Ответ: {err_data}")
         return {
             "ok": False,
             "error": str(e),
             "details": err_data
         }
-
