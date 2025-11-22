@@ -5,7 +5,6 @@ from typing import Optional, Dict, Any
 import logging
 from core.sender import send_gift_to_user
 from core.telegram_client import get_client_instance
-class SendGiftRequest(BaseModel):
 
 logger = logging.getLogger(__name__)
 app = FastAPI(title="Userbot API", version="1.0.0")
