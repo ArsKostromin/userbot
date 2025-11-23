@@ -49,13 +49,17 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: Optional
         return None
     
     try:
-        # GetSavedStarGiftsRequest требует peer - используем InputPeerSelf для личных сообщений
-        peer = types.InputPeerSelf()
+        # GetSavedStarGiftsRequest - получаем инвентарь подарков
+        # Согласно ошибке, offset должен быть bytes или str, а не int
         logger.debug(f"📋 Запрос инвентаря подарков через GetSavedStarGiftsRequest...")
         
+        # InputPeerSelf для личных сообщений
+        peer = types.InputPeerSelf()
+        
+        # offset должен быть строкой (пустая строка для начала)
         inventory_result = await client(functions.payments.GetSavedStarGiftsRequest(
             peer=peer,
-            offset=0,
+            offset="",  # offset должен быть строкой, не int!
             limit=1000 
         ))
         
