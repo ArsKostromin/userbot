@@ -52,8 +52,8 @@ async def create_star_invoice(
         "currency": "XTR",
         "prices": [{"label": "Комиссия", "amount": amount}],
         "max_tip_amount": 0,
-        "suggested_tip_amounts":,
-    }
+        "suggested_tip_amounts": [],
+    }   
     
     r = None
     try:
