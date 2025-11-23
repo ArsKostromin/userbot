@@ -1,7 +1,7 @@
 # userbot/api/server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Union
 import logging
 from core.sender import send_gift_to_user
 from core.telegram_client import get_client_instance
@@ -22,8 +22,14 @@ class SendGiftRequest(BaseModel):
     """Запрос на отправку подарка"""
     gift_id: int
     recipient_telegram_id: int
-    ton_contract_address: Optional[str] = None  # Уникальный slug подарка для поиска в инвентаре
-    msg_id: Optional[int] = None  # Опционально, если известен 
+    ton_contract_address: Optional[Union[str, int]] = None  # Уникальный slug подарка для поиска в инвентаре (может быть строкой или числом)
+    msg_id: Optional[int] = None  # Опционально, если известен
+    
+    def __init__(self, **data):
+        # Преобразуем ton_contract_address в строку, если он передан как число
+        if 'ton_contract_address' in data and data['ton_contract_address'] is not None:
+            data['ton_contract_address'] = str(data['ton_contract_address'])
+        super().__init__(**data) 
 
 
 class CreateStarInvoiceRequest(BaseModel):
@@ -41,19 +47,26 @@ async def send_gift(request: SendGiftRequest) -> Dict[str, Any]:
     Асинхронный эндпоинт для отправки подарка пользователю.
     Принимает gift_id и recipient_telegram_id.
     """
-    logger.info(f"📦 Запрос на отправку подарка: gift_id={request.gift_id}, recipient={request.recipient_telegram_id}")
+    logger.info(f"📦 Запрос на отправку подарка: gift_id={request.gift_id}, recipient={request.recipient_telegram_id}, ton_contract_address={request.ton_contract_address}, msg_id={request.msg_id}")
     
     client = get_client_instance() or _client_instance
     if not client:
+        logger.error("❌ Telegram клиент не инициализирован")
         raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
     
     try:
         # Преобразуем ton_contract_address в строку, если он передан
         ton_address = None
         if request.ton_contract_address is not None:
-            ton_address = str(request.ton_contract_address)
+            try:
+                ton_address = str(request.ton_contract_address)
+                logger.debug(f"✅ ton_contract_address преобразован в строку: {ton_address} (было: {request.ton_contract_address}, тип: {type(request.ton_contract_address).__name__})")
+            except Exception as e:
+                logger.error(f"❌ Ошибка при преобразовании ton_contract_address в строку: {e}, значение: {request.ton_contract_address}, тип: {type(request.ton_contract_address)}")
+                raise HTTPException(status_code=400, detail=f"Некорректный формат ton_contract_address: {e}")
         
         # Вызываем send_gift_to_user, передавая необходимые параметры
+        logger.debug(f"🚀 Вызов send_gift_to_user с параметрами: gift_id={request.gift_id}, recipient={request.recipient_telegram_id}, ton_address={ton_address}, msg_id={request.msg_id}")
         result = await send_gift_to_user(
             client=client,
             gift_id_external=request.gift_id, 

@@ -41,12 +41,17 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: Optional
         return None
     
     # Преобразуем в строку для сравнения
-    ton_contract_address_str = str(ton_contract_address)
-    logger.info(f"🔎 Поиск подарка по ton_contract_address={ton_contract_address_str} в инвентаре userbot...")
+    try:
+        ton_contract_address_str = str(ton_contract_address)
+        logger.info(f"🔎 Поиск подарка по ton_contract_address={ton_contract_address_str} (тип: {type(ton_contract_address).__name__}) в инвентаре userbot...")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при преобразовании ton_contract_address в строку: {e}, значение: {ton_contract_address}, тип: {type(ton_contract_address)}")
+        return None
     
     try:
         # GetSavedStarGiftsRequest требует peer - используем InputPeerSelf для личных сообщений
         peer = types.InputPeerSelf()
+        logger.debug(f"📋 Запрос инвентаря подарков через GetSavedStarGiftsRequest...")
         
         inventory_result = await client(functions.payments.GetSavedStarGiftsRequest(
             peer=peer,
@@ -54,29 +59,55 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: Optional
             limit=1000 
         ))
         
+        logger.info(f"📦 Получено подарков в инвентаре: {len(inventory_result.gifts)}")
+        
+        checked_count = 0
         for gift_struct in inventory_result.gifts:
-            # gift_struct - это SavedStarGiftUser или SavedStarGiftChat
-            if hasattr(gift_struct, 'gift') and hasattr(gift_struct, 'msg_id'):
+            checked_count += 1
+            try:
+                # gift_struct - это SavedStarGiftUser или SavedStarGiftChat
+                if not hasattr(gift_struct, 'gift'):
+                    logger.debug(f"⚠️ Подарок #{checked_count} не имеет атрибута 'gift', пропускаем")
+                    continue
+                    
+                if not hasattr(gift_struct, 'msg_id'):
+                    logger.debug(f"⚠️ Подарок #{checked_count} не имеет атрибута 'msg_id', пропускаем")
+                    continue
+                
                 gift_info = gift_struct.gift
+                msg_id = gift_struct.msg_id
+                
                 # Получаем slug из подарка (соответствует ton_contract_address)
                 gift_slug = getattr(gift_info, 'slug', None)
                 
+                if gift_slug is None:
+                    logger.debug(f"⚠️ Подарок msg_id={msg_id} не имеет slug, пропускаем")
+                    continue
+                
                 # Преобразуем slug в строку и сравниваем
-                if gift_slug:
+                try:
                     gift_slug_str = str(gift_slug)
+                    logger.debug(f"🔍 Проверка подарка msg_id={msg_id}: slug={gift_slug_str} (тип: {type(gift_slug).__name__}) vs искомый={ton_contract_address_str}")
+                    
                     if gift_slug_str == ton_contract_address_str:
-                        msg_id = gift_struct.msg_id
                         logger.info(f"✅ Найден подарок: msg_id={msg_id}, slug={gift_slug_str}")
                         return msg_id
+                except Exception as e:
+                    logger.warning(f"⚠️ Ошибка при преобразовании slug в строку для msg_id={msg_id}: {e}, slug={gift_slug}, тип={type(gift_slug)}")
+                    continue
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ Ошибка при обработке подарка #{checked_count}: {e}")
+                continue
 
-        logger.warning(f"❌ Подарок с ton_contract_address={ton_contract_address} не найден в инвентаре.")
+        logger.warning(f"❌ Подарок с ton_contract_address={ton_contract_address_str} не найден в инвентаре (проверено {checked_count} подарков).")
         return None
 
     except errors.RPCError as e:
         logger.error(f"❌ Ошибка RPC при получении инвентаря: {e.__class__.__name__} — {e}")
         return None
     except Exception as e:
-        logger.error(f"❌ Критическая ошибка при поиске подарка: {e}")
+        logger.exception(f"❌ Критическая ошибка при поиске подарка: {e}, тип ошибки: {type(e).__name__}")
         return None
 
 
@@ -186,11 +217,20 @@ async def send_gift_to_user(
         
         # 2. Определяем msg_id
         final_msg_id = gift_msg_id
-        if not final_msg_id and ton_contract_address:
-            # Если msg_id не передан, ищем подарок в инвентаре по ton_contract_address (slug)
-            final_msg_id = await find_gift_msg_id_by_ton_address(client, ton_contract_address)
+        if not final_msg_id:
+            if ton_contract_address:
+                logger.info(f"🔍 msg_id не передан, ищем подарок в инвентаре по ton_contract_address={ton_contract_address}")
+                # Если msg_id не передан, ищем подарок в инвентаре по ton_contract_address (slug)
+                final_msg_id = await find_gift_msg_id_by_ton_address(client, ton_contract_address)
+            else:
+                logger.error(f"❌ Не указаны ни msg_id, ни ton_contract_address для поиска подарка")
+                return {
+                    "status": "error",
+                    "error": "Не указаны параметры для поиска подарка (msg_id или ton_contract_address)"
+                }
         
         if not final_msg_id:
+            logger.error(f"❌ Не удалось найти подарок в инвентаре userbot")
             return {
                 "status": "error",
                 "error": f"Не удалось найти подарок в инвентаре userbot. Убедитесь, что подарок с ton_contract_address={ton_contract_address} есть в инвентаре."
