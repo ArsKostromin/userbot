@@ -48,12 +48,17 @@ async def send_gift(request: SendGiftRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
     
     try:
+        # Преобразуем ton_contract_address в строку, если он передан
+        ton_address = None
+        if request.ton_contract_address is not None:
+            ton_address = str(request.ton_contract_address)
+        
         # Вызываем send_gift_to_user, передавая необходимые параметры
         result = await send_gift_to_user(
             client=client,
             gift_id_external=request.gift_id, 
             recipient_telegram_id=request.recipient_telegram_id,
-            ton_contract_address=request.ton_contract_address,  # Для поиска в инвентаре
+            ton_contract_address=ton_address,  # Для поиска в инвентаре
             gift_msg_id=request.msg_id  # Опционально, если известен
         )
         

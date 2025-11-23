@@ -24,7 +24,7 @@ class InputPaymentCredentialsStars(TLObject):
         return self.CONSTRUCTOR_ID.to_bytes(4, "little") + self.flags.to_bytes(4, "little")
 
 
-async def find_gift_msg_id_by_ton_address(client, ton_contract_address: str) -> Optional[int]:
+async def find_gift_msg_id_by_ton_address(client, ton_contract_address: Optional[str]) -> Optional[int]:
     """
     Ищет msg_id подарка в инвентаре Userbot по ton_contract_address (slug).
     Это работает даже если подарок был выигран, а не получен через сообщение.
@@ -36,7 +36,13 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: str) -> 
     Returns:
         msg_id подарка из инвентаря или None
     """
-    logger.info(f"🔎 Поиск подарка по ton_contract_address={ton_contract_address} в инвентаре userbot...")
+    if not ton_contract_address:
+        logger.warning("❌ ton_contract_address не передан")
+        return None
+    
+    # Преобразуем в строку для сравнения
+    ton_contract_address_str = str(ton_contract_address)
+    logger.info(f"🔎 Поиск подарка по ton_contract_address={ton_contract_address_str} в инвентаре userbot...")
     
     try:
         # GetSavedStarGiftsRequest требует peer - используем InputPeerSelf для личных сообщений
@@ -47,7 +53,7 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: str) -> 
             offset=0,
             limit=1000 
         ))
-
+        
         for gift_struct in inventory_result.gifts:
             # gift_struct - это SavedStarGiftUser или SavedStarGiftChat
             if hasattr(gift_struct, 'gift') and hasattr(gift_struct, 'msg_id'):
@@ -55,11 +61,13 @@ async def find_gift_msg_id_by_ton_address(client, ton_contract_address: str) -> 
                 # Получаем slug из подарка (соответствует ton_contract_address)
                 gift_slug = getattr(gift_info, 'slug', None)
                 
-                # Сравниваем slug с ton_contract_address
-                if gift_slug and gift_slug == ton_contract_address:
-                    msg_id = gift_struct.msg_id
-                    logger.info(f"✅ Найден подарок: msg_id={msg_id}, slug={gift_slug}")
-                    return msg_id
+                # Преобразуем slug в строку и сравниваем
+                if gift_slug:
+                    gift_slug_str = str(gift_slug)
+                    if gift_slug_str == ton_contract_address_str:
+                        msg_id = gift_struct.msg_id
+                        logger.info(f"✅ Найден подарок: msg_id={msg_id}, slug={gift_slug_str}")
+                        return msg_id
 
         logger.warning(f"❌ Подарок с ton_contract_address={ton_contract_address} не найден в инвентаре.")
         return None
