@@ -24,38 +24,44 @@ class InputPaymentCredentialsStars(TLObject):
         return self.CONSTRUCTOR_ID.to_bytes(4, "little") + self.flags.to_bytes(4, "little")
 
 
-async def find_gift_msg_id_by_external_id(client, gift_id_external: int) -> Optional[int]:
+async def find_gift_msg_id_by_ton_address(client, ton_contract_address: str) -> Optional[int]:
     """
-    Ищет внутренний ID сообщения (msg_id) подарка в инвентаре Userbot
-    на основе внешнего ID (например, ID из вашей БД).
+    Ищет msg_id подарка в инвентаре Userbot по ton_contract_address (slug).
+    Это работает даже если подарок был выигран, а не получен через сообщение.
     
-    ВНИМАНИЕ: Для работы необходимо реализовать логику сопоставления.
-    В данном примере мы ПРЕДПОЛАГАЕМ, что внешний ID совпадает с msg_id.
-    Если это не так, вам нужно будет парсить метаданные (messageActionStarGiftUnique) 
-    каждого подарка в цикле.
+    Args:
+        client: Telethon клиент
+        ton_contract_address: Уникальный идентификатор подарка (slug) из Django БД
+    
+    Returns:
+        msg_id подарка из инвентаря или None
     """
-    logger.info(f"🔎 Запрос инвентаря. Поиск msg_id для внешнего ID={gift_id_external}...")
+    logger.info(f"🔎 Поиск подарка по ton_contract_address={ton_contract_address} в инвентаре userbot...")
+    
     try:
-        # Запрашиваем инвентарь подарков Userbot (максимальный лимит 1000)
+        # GetSavedStarGiftsRequest требует peer - используем InputPeerSelf для личных сообщений
+        peer = types.InputPeerSelf()
+        
         inventory_result = await client(functions.payments.GetSavedStarGiftsRequest(
+            peer=peer,
             offset=0,
             limit=1000 
         ))
 
         for gift_struct in inventory_result.gifts:
             # gift_struct - это SavedStarGiftUser или SavedStarGiftChat
-            
-            # --- ВАША ЛОГИКА СОПОСТАВЛЕНИЯ ЗДЕСЬ ---
-            # Предположим, что внешний ID совпадает с внутренним msg_id:
-            if hasattr(gift_struct, 'msg_id') and gift_struct.msg_id == gift_id_external:
-                logger.info(f"✅ Найден подарок: msg_id={gift_struct.msg_id} (совпадает с внешним ID).")
-                return gift_struct.msg_id
-            
-            # Если вам нужно парсить другие поля (например, slug, name) для сопоставления:
-            # if gift_struct.gift.slug == str(gift_id_external):
-            #     return gift_struct.msg_id
+            if hasattr(gift_struct, 'gift') and hasattr(gift_struct, 'msg_id'):
+                gift_info = gift_struct.gift
+                # Получаем slug из подарка (соответствует ton_contract_address)
+                gift_slug = getattr(gift_info, 'slug', None)
+                
+                # Сравниваем slug с ton_contract_address
+                if gift_slug and gift_slug == ton_contract_address:
+                    msg_id = gift_struct.msg_id
+                    logger.info(f"✅ Найден подарок: msg_id={msg_id}, slug={gift_slug}")
+                    return msg_id
 
-        logger.warning(f"❌ Подарок с внешним ID={gift_id_external} не найден в инвентаре.")
+        logger.warning(f"❌ Подарок с ton_contract_address={ton_contract_address} не найден в инвентаре.")
         return None
 
     except errors.RPCError as e:
@@ -131,16 +137,19 @@ async def send_gift_to_user(
     client,
     gift_id_external: int,
     recipient_telegram_id: int,
+    ton_contract_address: Optional[str] = None,
     gift_msg_id: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Отправляет подарок пользователю по внешнему ID или msg_id.
+    Отправляет подарок пользователю.
+    Ищет подарок в инвентаре по ton_contract_address (slug), что работает даже для выигранных подарков.
     
     Args:
         client: Telethon клиент (Userbot)
-        gift_id_external: ID подарка из вашей БД (используется для поиска msg_id)
+        gift_id_external: ID подарка из Django БД (для логирования)
         recipient_telegram_id: Telegram ID получателя
-        gift_msg_id: ID сообщения с подарком (если известен)
+        ton_contract_address: Уникальный slug подарка (используется для поиска в инвентаре)
+        gift_msg_id: ID сообщения с подарком (если известен, используется напрямую)
     
     Returns:
         Dict с результатом отправки
@@ -169,14 +178,14 @@ async def send_gift_to_user(
         
         # 2. Определяем msg_id
         final_msg_id = gift_msg_id
-        if not final_msg_id:
-            # Если msg_id не передан, ищем его по внешнему ID
-            final_msg_id = await find_gift_msg_id_by_external_id(client, gift_id_external)
+        if not final_msg_id and ton_contract_address:
+            # Если msg_id не передан, ищем подарок в инвентаре по ton_contract_address (slug)
+            final_msg_id = await find_gift_msg_id_by_ton_address(client, ton_contract_address)
         
         if not final_msg_id:
             return {
                 "status": "error",
-                "error": f"Не удалось определить msg_id для подарка с ID={gift_id_external}. Поиск не дал результатов."
+                "error": f"Не удалось найти подарок в инвентаре userbot. Убедитесь, что подарок с ton_contract_address={ton_contract_address} есть в инвентаре."
             }
 
         logger.info(f"📨 Используем msg_id={final_msg_id} для отправки подарка")

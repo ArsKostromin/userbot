@@ -22,9 +22,8 @@ class SendGiftRequest(BaseModel):
     """Запрос на отправку подарка"""
     gift_id: int
     recipient_telegram_id: int
-    peer_id: Optional[int] = None 
-    msg_id: Optional[int] = None 
-    access_hash: Optional[int] = None 
+    ton_contract_address: Optional[str] = None  # Уникальный slug подарка для поиска в инвентаре
+    msg_id: Optional[int] = None  # Опционально, если известен 
 
 
 class CreateStarInvoiceRequest(BaseModel):
@@ -49,12 +48,13 @@ async def send_gift(request: SendGiftRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Telegram клиент не инициализирован")
     
     try:
-        # Вызываем send_gift_to_user, передавая только необходимые параметры
+        # Вызываем send_gift_to_user, передавая необходимые параметры
         result = await send_gift_to_user(
             client=client,
             gift_id_external=request.gift_id, 
             recipient_telegram_id=request.recipient_telegram_id,
-            gift_msg_id=request.msg_id # Если msg_id не передан, функция найдет его сама
+            ton_contract_address=request.ton_contract_address,  # Для поиска в инвентаре
+            gift_msg_id=request.msg_id  # Опционально, если известен
         )
         
         if result.get("status") == "success":
