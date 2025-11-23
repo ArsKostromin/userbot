@@ -48,7 +48,7 @@ async def create_star_invoice(
         "title": title or "Оплата вывода NFT",
         "description": description or f"Вывод подарка #{gift_id}. Комиссия {amount} звёзд ⭐",
         "payload": f"withdraw_gift_{gift_id}",
-        "provider_token": "",  # для Stars — оставить пустым!
+        "provider_token": "",
         "currency": "XTR",
         "prices": [{"label": "Комиссия", "amount": amount}],
         "max_tip_amount": 0,
