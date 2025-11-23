@@ -116,7 +116,6 @@ async def send_snakebox_gift(client, recipient_id: int, recipient_hash: int, gif
             
         elif "STARGIFT_NOT_FOUND" in str(e):
             logger.error(f"❌ STARGIFT_NOT_FOUND: Подарок (msg_id={gift_msg_id}) не найден в инвентаре.")
-            # Явная обработка ошибки для эндпоинта
             return {"status": "error", "error": "Подарок не найден или уже был отправлен."} 
         
         else:

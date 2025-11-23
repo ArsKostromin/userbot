@@ -1,5 +1,4 @@
 # userbot/api/server.py
-# userbot/api/server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
@@ -23,8 +22,6 @@ class SendGiftRequest(BaseModel):
     """Запрос на отправку подарка"""
     gift_id: int
     recipient_telegram_id: int
-    # Эти поля опциональны и больше не используются в логике отправки,
-    # но оставлены для совместимости с внешним API/документацией.
     peer_id: Optional[int] = None 
     msg_id: Optional[int] = None 
     access_hash: Optional[int] = None 
